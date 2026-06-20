@@ -1,5 +1,7 @@
 # ☕ My Cafe POS — Modern Organic Brutalism
 
+🎉 Deployed on Render!
+
 ![My Cafe Logo](./logo.jpeg)
 
 ## 🌟 Overview
