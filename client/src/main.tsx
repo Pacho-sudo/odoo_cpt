@@ -11,7 +11,7 @@ import { store } from "./store";
 import { ThemeProvider } from "./components/theme-provider";
 import Dashboard from "./dashboard/Dashboard";
 import DashboardHome from "./dashboard/DashboardHome";
-import ProtectedRoute from "./ProtectedRoute";
+import RoleProtectedRoute from "./components/RoleProtectedRoute";
 import { Toaster } from "react-hot-toast";
 import StaffManagement from "./dashboard/staff/StaffManagement";
 import CategoryManagement from "./dashboard/category/CategoryManagement";
@@ -31,6 +31,9 @@ import StaffDashboard from "./pages/StaffDashboard";
 import CustomerDisplay from "./pages/CustomerDisplay";
 import CustomerHistory from "./pages/CustomerHistory";
 import AdvancedAnalytics from "./pages/AdvancedAnalytics";
+import Reports from "./pages/Reports";
+import PromotionManagement from "./pages/PromotionManagement";
+import Landing from "./pages/Landing";
 
 import { GoogleOAuthProvider } from "@react-oauth/google";
 
@@ -44,32 +47,47 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <BrowserRouter basename="/app">
             <MainNavbar />
             <Routes>
-              <Route path="/" element={<App />} />
+              <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/about" element={<About />} />
-              <Route path="/self-order/:tableId" element={<SelfOrdering />} />
+              <Route path="/self-order/:tableNumber" element={<SelfOrdering />} />
+              <Route path="/s/:token" element={<SelfOrdering />} />
               <Route path="/customer-display" element={<CustomerDisplay />} />
               <Route path="/history" element={<CustomerHistory />} />
-              <Route element={<ProtectedRoute />}>
+              
+              {/* Admin-only routes */}
+              <Route element={<RoleProtectedRoute allowedRoles={["admin"]} />}>
                 <Route path="/dashboard" element={<Dashboard />}>
                   <Route index element={<DashboardHome />} />
                   <Route path="analytics" element={<AdvancedAnalytics />} />
+                  <Route path="reports" element={<Reports />} />
                   <Route path="floor" element={<FloorManagement />} />
                   <Route path="staff" element={<StaffManagement />} />
                   <Route path="categories" element={<CategoryManagement />} />
                   <Route path="orders" element={<OrdersList />} />
                   <Route path="profile" element={<ProfilePage />} />
                   <Route path="menu" element={<ProductManagement />} />
-                  <Route path="pos" element={<POSPortal />} />
-                  <Route path="pos/terminal" element={<MainPage />} />
-                  <Route path="reports" element={<SummaryManagement />} />
-                  <Route path="waiter-station" element={<StaffDashboard />} />
+                  <Route path="promotions" element={<PromotionManagement />} />
                   <Route path="settings" element={<SettingManagement />} />
-                  <Route path="kitchen" element={<KitchenDisplay />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Route>
+
+              {/* Staff-only routes */}
+              <Route element={<RoleProtectedRoute allowedRoles={["staff", "cashier", "waiter", "barista"]} />}>
+                <Route path="/dashboard" element={<Dashboard />}>
+                  <Route path="pos" element={<POSPortal />} />
+                  <Route path="pos/terminal" element={<MainPage />} />
+                  <Route path="kitchen" element={<KitchenDisplay />} />
+                  <Route path="waiter-station" element={<StaffDashboard />} />
+                  <Route path="floor" element={<FloorManagement />} />
+                  <Route path="orders" element={<OrdersList />} />
+                  <Route path="profile" element={<ProfilePage />} />
+                  <Route path="*" element={<NotFound />} />
+                </Route>
+              </Route>
+
               <Route path="*" element={<NotFound />} />
             </Routes>
             <Toaster position="top-center" reverseOrder={false} />

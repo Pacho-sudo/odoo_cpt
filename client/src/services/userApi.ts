@@ -50,6 +50,12 @@ export const userApi = createApi({
         method: "PATCH",
       }),
     }),
+    denyUser: builder.mutation<any, string>({
+      query: (id) => ({
+        url: `/deny/${id}`,
+        method: "DELETE",
+      }),
+    }),
   }),
 });
 
@@ -59,4 +65,5 @@ export const {
   useUpdateUserProfileMutation,
   useGetPendingUsersQuery,
   useApproveUserMutation,
+  useDenyUserMutation,
 } = userApi;

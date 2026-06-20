@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc && cp -r src/public dist/ 2>/dev/null || true",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "seed:coupons": "ts-node-dev --transpile-only src/scripts/seedCouponsPromotions.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@types/nodemailer": "^8.0.1",
+    "@types/pdfkit": "^0.17.6",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
@@ -25,6 +28,8 @@
     "mongoose": "^8.18.1",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
+    "nodemailer": "^9.0.1",
+    "pdfkit": "^0.19.1",
     "socket.io": "^4.8.1",
     "winston": "^3.17.0"
   },

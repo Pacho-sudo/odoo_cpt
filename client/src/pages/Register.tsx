@@ -10,7 +10,7 @@ export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("customer");
+  const [role, setRole] = useState("waiter");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -35,27 +35,23 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-warm-white flex flex-col md:flex-row-reverse">
-      {/* 🟡 Accent Side Panel */}
-      <div className="w-full md:w-1/3 bg-golden-yellow text-deep-black p-12 md:p-20 flex flex-col justify-between border-b-8 md:border-b-0 md:border-l-8 border-deep-black">
+    <div className="min-h-screen bg-warm-white flex flex-col">
+      {/* 🟡 Accent Top Panel */}
+      <div className="w-full bg-golden-yellow text-deep-black p-12 flex flex-col border-b-8 border-deep-black">
         <div>
-          <div className="bg-deep-black text-white p-4 inline-block mb-12">
+          <div className="bg-deep-black text-white p-4 inline-block">
             <img src="/app/logo.png" alt="Logo" className="w-16 h-16 invert" />
           </div>
-          <h1 className="text-6xl md:text-8xl leading-[0.85] italic tracking-tighter mb-8">
+          <h1 className="text-5xl md:text-7xl leading-[0.85] italic tracking-tighter mt-6">
             JOIN THE<br />
             <span className="bg-deep-black text-golden-yellow px-2 inline-block mt-2">ECOSYSTEM</span>
           </h1>
-          <p className="font-mono text-[10px] tracking-widest uppercase max-w-xs font-black">
+          <p className="font-mono text-[10px] tracking-widest uppercase max-w-xs font-black mt-6">
             [RECRUITMENT_PHASE_ACTIVE]<br />
             Security level: 4<br />
             Role Assignment Required
           </p>
         </div>
-
-        <p className="font-mono text-[8px] tracking-[0.3em] font-black opacity-20 uppercase hidden md:block">
-          AUTHORIZED_PERSONNEL_ONLY_BEYOND_THIS_POINT_ODOO_SYSTEM_X
-        </p>
       </div>
 
       {/* ⚪️ Registration form area */}
@@ -110,7 +106,6 @@ export default function Register() {
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
               >
-                <option value="customer">Customer / Guest</option>
                 <option value="waiter">Waiter / Staff</option>
                 <option value="cashier">Cashier</option>
                 <option value="admin">System Admin</option>

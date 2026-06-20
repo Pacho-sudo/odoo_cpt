@@ -10,6 +10,7 @@ import { AuthRequest } from "../middleware/authMiddleware";
 import jwt from "jsonwebtoken";
 import { calculateOrderPriority } from "../utils/priority";
 import { calculateWaitTime } from "../utils/waitTimer";
+import { User } from "../models/User";
 
 export const getTodayOrderSummaryController = async (
   req: Request,
@@ -25,7 +26,7 @@ export const getTodayOrderSummaryController = async (
 
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
-    const { items, paymentMethod, tableId, discountPercent, taxRate, sessionId, isCustomerOrder } =
+    const { items, paymentMethod, tableId, discountPercent, taxRate, sessionId, isCustomerOrder, discountAmount, couponCode, appliedPromotions, customerId, employeeId, subtotal, tax, discount, totalAmount } =
       req.body;
     const waiterId = (req as any).user?.id;
     const isCustomer = isCustomerOrder || false;
@@ -42,7 +43,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           return res.status(400).json({ success: false, message: "Invalid item quantity or price" });
        }
        totalPrice += item.price * item.quantity;
-    }
+     }
 
     // Capture staff manually since POST /api/orders is public for guests
     let staffId = null;
@@ -91,10 +92,20 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       taxRate: taxRate || 0,
       paymentMethod: paymentMethod || "cash",
       table: verifiedTableId,
-      status: isCustomer ? "pending" : "pending",
+      tableId: verifiedTableId,
+      status: "draft",
       isCustomerOrder: isCustomer,
       sessionId: activeSession?._id,
       responsibleStaff: autoStaffId,
+      employeeId: employeeId || autoStaffId,
+      customerId,
+      discountAmount: discountAmount || 0,
+      couponCode: couponCode || null,
+      appliedPromotions: appliedPromotions || [],
+      subtotal: subtotal || 0,
+      tax: tax || 0,
+      discount: discount || 0,
+      totalAmount: totalAmount || totalPrice
     });
 
     // ── INITIAL PRIORITY & WAIT-TIME CALCULATION ────────────────────────────
@@ -263,7 +274,7 @@ export const getOrderById = async (req: Request, res: Response) => {
 export const updateOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, items, paymentMethod, tableId, isPriorityBoosted, confirmedTime, waiterConfirmed } = req.body;
+    const { status, items, paymentMethod, tableId, isPriorityBoosted, confirmedTime, waiterConfirmed, discountAmount, couponCode, appliedPromotions } = req.body;
     const currentUserId = req.user?.id;
     const currentUserRole = req.user?.role;
 
@@ -284,6 +295,9 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
     if (paymentMethod) order.paymentMethod = paymentMethod;
     if (isPriorityBoosted !== undefined) order.isPriorityBoosted = isPriorityBoosted;
     if (waiterConfirmed !== undefined) order.waiterConfirmed = waiterConfirmed;
+    if (discountAmount !== undefined) order.discountAmount = discountAmount;
+    if (couponCode !== undefined) order.couponCode = couponCode;
+    if (appliedPromotions !== undefined) order.appliedPromotions = appliedPromotions;
 
     // Allow item updates during review
     if (items && Array.isArray(items) && items.length > 0) {
@@ -470,6 +484,63 @@ export const updateItemStatus = async (req: Request, res: Response) => {
         autoStatusChange: allUnavailable ? "cancelled" : null,
       },
     });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// New APIs for Order Management
+export const cancelOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (order.status !== "draft") {
+      return res.status(400).json({ success: false, message: "Only draft orders can be cancelled" });
+    }
+
+    order.status = "cancelled";
+    await order.save();
+    
+    const summary = await getTodayOrderSummary();
+    io.emit("orderSummaryUpdate", summary);
+
+    return res.status(200).json({ success: true, data: order });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const searchOrders = async (req: Request, res: Response) => {
+  try {
+    const { search, status } = req.query;
+    
+    const query: any = {};
+    
+    if (search) {
+      const searchStr = search as string;
+      query.$or = [
+        { orderNumber: { $regex: searchStr, $options: "i" } },
+        { customOrderID: { $regex: searchStr, $options: "i" } }
+      ];
+    }
+    
+    if (status && status !== "all") {
+      query.status = status;
+    }
+
+    const orders = await Order.find(query)
+      .populate("tableId")
+      .populate("customerId")
+      .populate("employeeId")
+      .populate("items.product")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, data: orders });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }

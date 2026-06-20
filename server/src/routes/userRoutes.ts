@@ -11,6 +11,7 @@ import {
   getUserProfile,
   updateUserProfile,
   approveUser,
+  denyUser,
   getPendingUsers,
   googleLogin,
 } from "../controllers/user.controller";
@@ -33,6 +34,7 @@ router.patch("/staff/:id/active", authMiddleware, adminMiddleware, toggleStaffAc
 router.delete("/staff/:id", authMiddleware, adminMiddleware, deleteStaff);
 router.get("/pending", authMiddleware, adminMiddleware, getPendingUsers);
 router.patch("/approve/:id", authMiddleware, adminMiddleware, approveUser);
+router.delete("/deny/:id", authMiddleware, adminMiddleware, denyUser);
 
 router.get("/profile", authMiddleware, getUserProfile);
 router.put("/profile", authMiddleware, updateUserProfile);

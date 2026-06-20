@@ -15,6 +15,11 @@ import sessionRoutes from "./routes/sessionRoutes";
 import staffRoutes from "./routes/staffRoutes";
 import floorRoutes from "./routes/floorRoutes";
 import analyticsRoutes from "./routes/analyticsRoutes";
+import couponRoutes from "./routes/couponRoutes";
+import promotionRoutes from "./routes/promotionRoutes";
+import receiptRoutes from "./routes/receiptRoutes";
+import apiKeyRoutes from "./routes/apiKeyRoutes";
+import selfOrderingSettingsRoutes from "./routes/selfOrderingSettingsRoutes";
 import logger from "./utils/logger";
 import path from "path";
 dotenv.config();
@@ -30,6 +35,7 @@ const allowedOrigins = [
   "https://cafe-sync.vercel.app",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
   process.env.FRONTEND_URL || "http://localhost:5173",
 ];
 
@@ -117,6 +123,11 @@ app.use("/api/settings", settinsRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/coupons", couponRoutes);
+app.use("/api/promotions", promotionRoutes);
+app.use("/api/receipts", receiptRoutes);
+app.use("/api/keys", apiKeyRoutes);
+app.use("/api/self-ordering-settings", selfOrderingSettingsRoutes);
 // Test Error Route
 app.get("/error", (req: Request) => {
   throw new Error("Test error!");

@@ -11,7 +11,7 @@ export const getTodayOrderSummary = async () => {
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
 
-  const allStatuses = ["pending", "preparing", "served", "cancelled"];
+  const allStatuses = ["draft", "pending", "preparing", "ready", "served", "paid", "cancelled"];
 
   const statusCounts: Record<string, number> = {};
   allStatuses.forEach((status) => {

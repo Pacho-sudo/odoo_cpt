@@ -337,6 +337,18 @@ export const approveUser = async (req: Request, res: Response) => {
   }
 };
 
+// Deny (delete) a pending user
+export const denyUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findByIdAndDelete(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ success: true, message: "User denied and removed successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error denying user", error });
+  }
+};
+
 // Get pending approvals
 export const getPendingUsers = async (req: Request, res: Response) => {
   try {

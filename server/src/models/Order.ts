@@ -1,9 +1,11 @@
 import { Schema, model, Document, Types } from "mongoose";
 import { IProduct } from "./Product";
 import { ITable } from "./Table";
+import { IUser } from "./User";
 
 export interface IOrderItem {
   product: IProduct["_id"];
+  variant?: string;
   quantity: number;
   size: string;
   price: number;
@@ -14,11 +16,20 @@ export interface IOrderItem {
 
 export interface IOrder extends Document {
   customOrderID: string;
+  orderNumber: string;
+  tableId?: Types.ObjectId;
+  customerId?: Types.ObjectId;
+  employeeId?: Types.ObjectId;
+  products?: IOrderItem[];
   items: IOrderItem[];
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
+  totalAmount?: number;
   totalPrice: number;
   discountPercent?: number;
   taxRate?: number;
-  status: "draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed";
+  status: "draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed" | "paid";
   paymentMethod: "cash" | "card" | "online" | "upi" | "digital";
   isCustomerOrder?: boolean;
   waiterConfirmed?: boolean;
@@ -26,6 +37,10 @@ export interface IOrder extends Document {
   sessionId?: Types.ObjectId;
   responsibleStaff?: Types.ObjectId;
   cashierId?: Types.ObjectId;
+  couponId?: Types.ObjectId;
+  promotionId?: Types.ObjectId;
+  totalDiscount?: number;
+  totalTax?: number;
   priorityScore: number;
   priorityLevel: "high" | "medium" | "low";
   isPriorityBoosted?: boolean;
@@ -34,10 +49,14 @@ export interface IOrder extends Document {
   timeConfirmedAt?: Date;
   createdAt: Date;
   updatedAt?: Date;
+  discountAmount?: number;
+  couponCode?: string;
+  appliedPromotions?: string[];
 }
 
 const orderItemSchema = new Schema<IOrderItem>({
   product: { type: Schema.Types.ObjectId, ref: "Product", required: true },
+  variant: { type: String },
   quantity: { type: Number, required: true },
   size: { type: String, required: true },
   price: { type: Number, required: true },
@@ -53,14 +72,30 @@ const orderItemSchema = new Schema<IOrderItem>({
 const orderSchema = new Schema<IOrder>(
   {
     customOrderID: { type: String, unique: true },
+    orderNumber: { type: String, unique: true, sparse: true },
+    tableId: { type: Schema.Types.ObjectId, ref: "Table" },
+    customerId: { type: Schema.Types.ObjectId, ref: "User" },
+    employeeId: { type: Schema.Types.ObjectId, ref: "User" },
+    products: [{ type: Schema.Types.ObjectId, ref: "Product" }],
     items: [orderItemSchema],
+    subtotal: { type: Number, default: 0 },
+    tax: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
     discountPercent: { type: Number, required: true, default: 0 },
     taxRate: { type: Number, required: true, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+    couponCode: { type: String, required: false },
+    appliedPromotions: { type: [String], default: [] },
+    couponId: { type: Schema.Types.ObjectId, ref: "Coupon", required: false },
+    promotionId: { type: Schema.Types.ObjectId, ref: "Promotion", required: false },
+    totalDiscount: { type: Number, default: 0 },
+    totalTax: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ["draft", "pending", "preparing", "ready", "served", "cancelled", "completed"],
-      default: "pending",
+      enum: ["draft", "pending", "preparing", "ready", "served", "cancelled", "completed", "paid"],
+      default: "draft",
     },
     isCustomerOrder: { type: Boolean, default: false },
     waiterConfirmed: { type: Boolean, default: false },
@@ -89,7 +124,7 @@ const orderSchema = new Schema<IOrder>(
   { timestamps: true }
 );
 
-// Auto-generate customOrderID
+// Auto-generate customOrderID and orderNumber
 orderSchema.pre("save", async function (next) {
   const doc = this as any;
   if (!doc.customOrderID) {
@@ -113,6 +148,34 @@ orderSchema.pre("save", async function (next) {
     }
     doc.customOrderID = `${datePrefix}-${nextNumber}`;
   }
+  
+  // Generate simple orderNumber like ORD1001, ORD1002, etc.
+  if (!doc.orderNumber) {
+    const lastOrderByNumber = await (this.constructor as any).findOne().sort({ orderNumber: -1 });
+    let nextOrderNum = 1001;
+    if (lastOrderByNumber && lastOrderByNumber.orderNumber) {
+      const numPart = parseInt(lastOrderByNumber.orderNumber.replace("ORD", ""));
+      nextOrderNum = numPart + 1;
+    }
+    doc.orderNumber = `ORD${nextOrderNum}`;
+  }
+
+  // Map products from items for compatibility
+  if (!doc.products && doc.items && doc.items.length > 0) {
+    doc.products = doc.items.map((item: IOrderItem) => item.product);
+  }
+
+  // Map tax, discount from taxRate, discountAmount for compatibility
+  if (typeof doc.tax === "undefined" && typeof doc.totalTax !== "undefined") {
+    doc.tax = doc.totalTax;
+  }
+  if (typeof doc.discount === "undefined" && typeof doc.totalDiscount !== "undefined") {
+    doc.discount = doc.totalDiscount;
+  }
+  if (typeof doc.totalAmount === "undefined" && typeof doc.totalPrice !== "undefined") {
+    doc.totalAmount = doc.totalPrice;
+  }
+
   next();
 });
 

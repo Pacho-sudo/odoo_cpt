@@ -1,10 +1,11 @@
-import { useGetPendingUsersQuery, useApproveUserMutation } from "@/services/userApi";
+import { useGetPendingUsersQuery, useApproveUserMutation, useDenyUserMutation } from "@/services/userApi";
 import { UserCheck, UserX, Clock } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 export const UserApproval = () => {
   const { data, refetch } = useGetPendingUsersQuery(undefined, { refetchOnMountOrArgChange: true });
   const [approveUser, { isLoading: isApproving }] = useApproveUserMutation();
+  const [denyUser, { isLoading: isDenying }] = useDenyUserMutation();
 
   const handleApprove = async (id: string) => {
     try {
@@ -13,6 +14,16 @@ export const UserApproval = () => {
       refetch();
     } catch (err) {
       toast.error("APPROVAL FAILED");
+    }
+  };
+
+  const handleDeny = async (id: string) => {
+    try {
+      await denyUser(id).unwrap();
+      toast.success("USER DENIED & REMOVED");
+      refetch();
+    } catch (err) {
+      toast.error("DENY FAILED");
     }
   };
 
@@ -44,20 +55,24 @@ export const UserApproval = () => {
             </div>
           </div>
           <div className="flex items-center gap-4 w-full md:w-auto">
-             <div className="flex flex-col items-start md:items-end flex-1 md:flex-none">
-                <p className="text-[8px] font-mono font-black text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1">
-                   <Clock size={10} /> CREATED_AT
-                </p>
-                <p className="text-xs font-bold text-deep-black">{new Date(user.createdAt).toLocaleDateString()}</p>
-             </div>
+            <div className="flex flex-col items-start md:items-end flex-1 md:flex-none">
+              <p className="text-[8px] font-mono font-black text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                <Clock size={10} /> CREATED_AT
+              </p>
+              <p className="text-xs font-bold text-deep-black">{new Date(user.createdAt).toLocaleDateString()}</p>
+            </div>
             <button
               onClick={() => handleApprove(user._id)}
-              disabled={isApproving}
+              disabled={isApproving || isDenying}
               className="brutalist-button h-12 px-6 flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 w-full md:w-auto"
             >
               <UserCheck size={16} /> AUTHORIZE
             </button>
-            <button className="brutalist-button h-12 px-6 flex items-center gap-2 bg-red-500 text-white hover:bg-red-600 w-full md:w-auto">
+            <button
+              onClick={() => handleDeny(user._id)}
+              disabled={isApproving || isDenying}
+              className="brutalist-button h-12 px-6 flex items-center gap-2 bg-red-500 text-white hover:bg-red-600 w-full md:w-auto"
+            >
               <UserX size={16} /> DENY
             </button>
           </div>

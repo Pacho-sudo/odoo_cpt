@@ -9,7 +9,13 @@ import {
   getSalesTrendsAnalytics,
   getOrderTimeAnalytics,
   getOverviewAnalytics,
-  getTimeBasedItemAnalytics
+  getTimeBasedItemAnalytics,
+  getTopCategoriesAnalytics,
+  getTopOrdersAnalytics,
+  getTopProductsAnalytics,
+  getEmployeesList,
+  getSessionsList,
+  getProductsList
 } from "../controllers/analytics.controller";
 import { authMiddleware, adminMiddleware } from "../middleware/authMiddleware";
 
@@ -31,5 +37,13 @@ router.get("/peak-hours", authMiddleware, adminMiddleware, getPeakHoursAnalytics
 router.get("/best-items", authMiddleware, adminMiddleware, getBestItemsAnalytics);
 router.get("/waiter-performance", authMiddleware, adminMiddleware, getWaiterAnalytics); 
 router.get("/order-time", authMiddleware, adminMiddleware, getOrderTimeAnalytics);
+
+// New endpoints for reports
+router.get("/top-categories", authMiddleware, adminMiddleware, getTopCategoriesAnalytics);
+router.get("/top-orders", authMiddleware, adminMiddleware, getTopOrdersAnalytics);
+router.get("/top-products", authMiddleware, adminMiddleware, getTopProductsAnalytics);
+router.get("/employees", authMiddleware, adminMiddleware, getEmployeesList);
+router.get("/sessions", authMiddleware, adminMiddleware, getSessionsList);
+router.get("/products-list", authMiddleware, adminMiddleware, getProductsList);
 
 export default router;

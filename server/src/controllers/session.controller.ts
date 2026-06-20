@@ -6,7 +6,8 @@ import mongoose from "mongoose";
 export const getSessions = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user.id;
-    const sessions = await Session.find({ user }).sort({ createdAt: -1 });
+    // Check both cashier and user for backward compatibility
+    const sessions = await Session.find({ $or: [{ cashier: user }, { user }] }).sort({ createdAt: -1 });
     return res.status(200).json({ success: true, data: sessions });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -19,7 +20,9 @@ export const openSession = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
 
     // 1. Check if user already has an active session
-    const activeSession = await Session.findOne({ user: userId, status: "open" });
+    const activeSession = await Session.findOne({
+      $or: [{ cashier: userId, status: "open" }, { user: userId, status: "open" }]
+    });
     if (activeSession) {
       return res.status(400).json({ 
         success: false, 
@@ -29,7 +32,8 @@ export const openSession = async (req: Request, res: Response) => {
 
     // 2. Create new session
     const session = new Session({
-      user: userId,
+      cashier: userId,
+      user: userId, // Backward compatibility
       startingBalance: startingBalance || 0,
       status: "open",
       startTime: new Date(),
@@ -97,7 +101,10 @@ export const closeSession = async (req: Request, res: Response) => {
 export const getActiveSession = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user.id;
-    const session = await Session.findOne({ user, status: "open" });
+    // Check both cashier and user for backward compatibility
+    const session = await Session.findOne({
+      $or: [{ cashier: user, status: "open" }, { user, status: "open" }]
+    });
     return res.status(200).json({ success: true, session });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });

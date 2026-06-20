@@ -72,3 +72,16 @@ export const getAssignedTables = async (req: any, res: Response) => {
     res.status(500).json({ message: "Error fetching assigned tables", error });
   }
 };
+
+export const getTableByToken = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    const table = await Table.findOne({ selfOrderToken: token }).populate("floor");
+    if (!table) {
+      return res.status(404).json({ message: "Table not found" });
+    }
+    res.json({ data: table });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching table" });
+  }
+};

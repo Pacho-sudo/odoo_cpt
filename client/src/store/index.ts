@@ -10,6 +10,10 @@ import { settingsApi } from "@/services/SettingsApi";
 import { tableApi } from "@/services/tableApi";
 import { floorApi } from "@/services/floorApi";
 import { sessionApi } from "@/services/sessionApi";
+import { couponApi } from "@/services/couponApi";
+import { receiptApi } from "@/services/receiptApi";
+import { apiKeyApi } from "@/services/apiKeyApi";
+import { selfOrderingSettingsApi } from "@/services/selfOrderingSettingsApi";
 
 export const store = configureStore({
   reducer: {
@@ -24,6 +28,10 @@ export const store = configureStore({
     [tableApi.reducerPath]: tableApi.reducer,
     [floorApi.reducerPath]: floorApi.reducer,
     [sessionApi.reducerPath]: sessionApi.reducer,
+    [couponApi.reducerPath]: couponApi.reducer,
+    [receiptApi.reducerPath]: receiptApi.reducer,
+    [apiKeyApi.reducerPath]: apiKeyApi.reducer,
+    [selfOrderingSettingsApi.reducerPath]: selfOrderingSettingsApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware()
@@ -35,7 +43,11 @@ export const store = configureStore({
       .concat(productApi.middleware)
       .concat(tableApi.middleware)
       .concat(floorApi.middleware)
-      .concat(sessionApi.middleware),
+      .concat(sessionApi.middleware)
+      .concat(couponApi.middleware)
+      .concat(receiptApi.middleware)
+      .concat(apiKeyApi.middleware)
+      .concat(selfOrderingSettingsApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

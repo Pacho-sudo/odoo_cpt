@@ -1,5 +1,5 @@
 import express from "express";
-import { getTables, createTable, updateTable, deleteTable, getTableStats, getAssignedTables } from "../controllers/table.Controller";
+import { getTables, createTable, updateTable, deleteTable, getTableStats, getAssignedTables, getTableByToken } from "../controllers/table.Controller";
 import { authMiddleware, adminMiddleware } from "../middleware/authMiddleware";
 
 const router = express.Router();
@@ -7,6 +7,7 @@ const router = express.Router();
 // Public routes - customers can view tables and stats
 router.get("/", getTables);
 router.get("/stats", getTableStats);
+router.get("/token/:token", getTableByToken);
 
 // Protected routes - only authenticated users can access or modify
 router.use(authMiddleware);

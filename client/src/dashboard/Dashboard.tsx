@@ -6,8 +6,8 @@ import SessionGuard from "@/components/SessionGuard";
 
 export default function Dashboard() {
   return (
-    <SidebarProvider className="min-w-full bg-warm-white">
-      <div className="flex h-screen min-w-full bg-warm-white">
+    <SidebarProvider className="w-full bg-warm-white">
+      <div className="flex h-screen w-full bg-warm-white">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
           <Navbar />

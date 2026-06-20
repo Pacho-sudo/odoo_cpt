@@ -623,16 +623,46 @@ const initImageModal = () => {
   });
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+const initVideoAutoplay = () => {
+  const video = document.getElementById('coffee-overflow-video');
+  if (video) {
+    video.muted = true;
+    video.playsInline = true;
+    video.play().catch(err => {
+      console.warn("Autoplay was prevented by browser:", err);
+    });
+  }
+};
+
+function startApp() {
    initSmoothScroll();
    initScrollytelling();
    initCategoriesAnimation();
    initInteractiveBg();
    initImageModal();
-});
+   initVideoAutoplay();
+}
 
-window.addEventListener('load', () => {
-   // Secondary refresh to ensure all images are loaded for ScrollTrigger
-   ScrollTrigger.refresh();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  startApp();
+}
+
+function handleWindowLoad() {
+   if (typeof ScrollTrigger !== 'undefined') {
+     ScrollTrigger.refresh();
+   }
+}
+
+if (document.readyState === 'complete') {
+  handleWindowLoad();
+} else {
+  window.addEventListener('load', handleWindowLoad);
+}
+
+window.addEventListener('resize', () => {
+  if (typeof ScrollTrigger !== 'undefined') {
+    ScrollTrigger.refresh();
+  }
 });
-window.addEventListener('resize', () => ScrollTrigger.refresh());

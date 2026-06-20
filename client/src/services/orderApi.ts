@@ -11,26 +11,49 @@ export interface CreateOrderPayload {
   items: OrderItemPayload[];
   paymentMethod: "cash" | "card" | "online" | "upi" | "digital";
   tableId?: string;
+  customerId?: string;
+  employeeId?: string;
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
+  totalAmount?: number;
 }
 
 export interface UpdateOrderPayload {
-  status?: "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed";
+  status?: "draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed" | "paid";
   paymentMethod?: "cash" | "card" | "online" | "upi" | "digital";
+  tableId?: string;
+  customerId?: string;
+  employeeId?: string;
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
+  totalAmount?: number;
 }
 
 // Define the Order type to be used in the allData object
 interface Order {
   _id: string;
+  orderNumber?: string;
+  customOrderID?: string;
   table?: { tableNumber: string };
+  tableId?: any;
   status: string;
   totalPrice: number;
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
+  totalAmount?: number;
   paymentMethod: string;
   createdAt: string;
+  customerId?: any;
+  employeeId?: any;
+  items?: any[];
 }
 
 // Define the StatusBreakdown type
 export interface StatusBreakdown {
-  _id: "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed";
+  _id: "pending" | "preparing" | "ready" | "served" | "cancelled" | "completed" | "paid" | "draft";
   count: number;
 }
 
@@ -40,6 +63,8 @@ export interface AllData {
   preparing?: Order[];
   served?: Order[];
   cancelled?: Order[];
+  draft?: Order[];
+  paid?: Order[];
 }
 
 // 📊 Corrected Sales Summary Response type to match API response
@@ -80,7 +105,7 @@ export const orderApi = createApi({
     // Get all orders
     getOrders: builder.query<
       {
-        data: any[];
+        data: Order[];
         pagination: {
           total: number;
           page: number;
@@ -118,6 +143,17 @@ export const orderApi = createApi({
       providesTags: ["Orders"],
     }),
 
+    // Search orders
+    searchOrders: builder.query<any, { search?: string; status?: string }>({
+      query: ({ search, status }) => {
+        let url = `/search?`;
+        if (search) url += `search=${encodeURIComponent(search)}&`;
+        if (status) url += `status=${status}`;
+        return url;
+      },
+      providesTags: ["Orders"],
+    }),
+
     // Get order by ID
     getOrderById: builder.query({
       query: (id) => `/${id}`,
@@ -139,6 +175,15 @@ export const orderApi = createApi({
       query: (id) => ({
         url: `/${id}`,
         method: "DELETE",
+      }),
+      invalidatesTags: ["Orders", "Summary"],
+    }),
+
+    // Cancel order
+    cancelOrder: builder.mutation<any, string>({
+      query: (id) => ({
+        url: `/${id}/cancel`,
+        method: "PUT",
       }),
       invalidatesTags: ["Orders", "Summary"],
     }),
@@ -221,9 +266,11 @@ export const orderApi = createApi({
 export const {
   useCreateOrderMutation,
   useGetOrdersQuery,
+  useSearchOrdersQuery,
   useGetOrderByIdQuery,
   useUpdateOrderMutation,
   useDeleteOrderMutation,
+  useCancelOrderMutation,
   useGetSalesSummaryQuery,
   useGetSalesByDateRangeQuery,
   useUpdateItemStatusMutation,

@@ -71,16 +71,28 @@ export default function OrderSummary() {
               <span className="font-medium">{summary.totalOrders || 0}</span>
             </li>
             <li className="flex justify-between text-yellow-500">
+              <span>📝 Draft:</span>
+              <span className="font-medium">{summary.draft || 0}</span>
+            </li>
+            <li className="flex justify-between text-yellow-600">
               <span>🟡 Pending:</span>
               <span className="font-medium">{summary.pending || 0}</span>
             </li>
-            <li className="flex justify-between text-blue-500">
+            <li className="flex justify-between text-orange-500">
               <span>👨‍🍳 Preparing:</span>
               <span className="font-medium">{summary.preparing || 0}</span>
+            </li>
+            <li className="flex justify-between text-purple-500">
+              <span>🟣 Ready:</span>
+              <span className="font-medium">{summary.ready || 0}</span>
             </li>
             <li className="flex justify-between text-green-600 dark:text-green-400">
               <span>✅ Served:</span>
               <span className="font-medium">{summary.served || 0}</span>
+            </li>
+            <li className="flex justify-between text-emerald-600">
+              <span>💰 Paid:</span>
+              <span className="font-medium">{summary.paid || 0}</span>
             </li>
             <li className="flex justify-between text-red-500 dark:text-red-400">
               <span>❌ Cancelled:</span>

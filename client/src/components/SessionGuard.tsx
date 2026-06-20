@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useLocation } from "react-router";
 import type { RootState, AppDispatch } from "../store";
 import { setSession } from "../store/userSlice";
 import axios from "axios";
@@ -31,6 +32,7 @@ import toast from "react-hot-toast";
 const SessionGuard = ({ children }: { children: React.ReactNode }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { sessionId, token, role } = useSelector((state: RootState) => state.user);
+  const location = useLocation();
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -42,10 +44,28 @@ const SessionGuard = ({ children }: { children: React.ReactNode }) => {
 
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5001";
 
+  // List of admin routes that don't require a POS session
+  const adminRoutes = [
+    "/dashboard/analytics",
+    "/dashboard/floor",
+    "/dashboard/staff",
+    "/dashboard/categories",
+    "/dashboard/menu",
+    "/dashboard/promotions",
+    "/dashboard/reports",
+    "/dashboard/settings",
+    "/dashboard/profile"
+  ];
+
+  // Check if current route is an admin route OR user is admin
+  const isAdminRouteOrUser = role === "admin" || adminRoutes.some(route => location.pathname.startsWith(route));
+
   // Check for active session on mount or token change
   useEffect(() => {
     const checkActiveSession = async () => {
       if (!token) return;
+      // Skip session check for admin routes/users
+      if (isAdminRouteOrUser) return;
       
       try {
         const res = await axios.get(`${apiUrl}/api/sessions/active`, {
@@ -80,10 +100,10 @@ const SessionGuard = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    if (!sessionId && token) {
+    if (!sessionId && token && !isAdminRouteOrUser) {
       checkActiveSession();
     }
-  }, [sessionId, token, dispatch, apiUrl, role]);
+  }, [sessionId, token, dispatch, apiUrl, role, isAdminRouteOrUser]);
 
   const handleOpenSession = async () => {
     try {
@@ -141,8 +161,8 @@ const SessionGuard = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // If no session is active, show the "Open Session" full-screen overlay (for non-staff)
-  if (!sessionId && token) {
+  // If no session is active, show the "Open Session" full-screen overlay (for non-staff and non-admin)
+  if (!sessionId && token && !isAdminRouteOrUser) {
     if (role === "staff" || role === "waiter") {
       return (
         <div className="min-h-screen bg-slate-50 dark:bg-gray-950 flex flex-col items-center justify-center p-4">

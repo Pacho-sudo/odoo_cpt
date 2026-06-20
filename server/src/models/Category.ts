@@ -2,13 +2,13 @@ import { Schema, model, Document } from "mongoose";
 
 export interface ICategory extends Document {
   name: string;
-  items?: Schema.Types.ObjectId[];
+  active: boolean;
 }
 
 const categorySchema = new Schema<ICategory>(
   {
     name: { type: String, required: true },
-    items: [{ type: Schema.Types.ObjectId, ref: "Product" }],
+    active: { type: Boolean, required: true, default: true },
   },
   { timestamps: true }
 );

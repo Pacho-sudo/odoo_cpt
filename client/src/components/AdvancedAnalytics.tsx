@@ -29,7 +29,9 @@ import {
   BarChart3,
   Calendar,
   Zap,
-  Coffee
+  Coffee,
+  Tag,
+  Percent
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -46,6 +48,7 @@ import {
 } from "recharts";
 import { generatePDF } from "./GeneratePdf";
 import Swal from "sweetalert2";
+import { useGetCouponAnalyticsQuery, useGetPromotionAnalyticsQuery } from "@/services/couponApi";
 
 const AdvancedInsightDashboard = () => {
   const [filter, setFilter] = useState("today");
@@ -62,6 +65,10 @@ const AdvancedInsightDashboard = () => {
   
   const [loading, setLoading] = useState(true);
   const { token } = useSelector((state: RootState) => state.user);
+  
+  // Coupon & Promotion Analytics
+  const { data: couponAnalyticsData } = useGetCouponAnalyticsQuery();
+  const { data: promoAnalyticsData } = useGetPromotionAnalyticsQuery();
 
   const fetchAnalytics = async () => {
     try {
@@ -174,6 +181,20 @@ const AdvancedInsightDashboard = () => {
       icon: TrendingUp,
       color: "bg-green-500",
       textColor: "text-green-600"
+    },
+    {
+      title: "Total Coupons",
+      value: couponAnalyticsData?.data?.totalCoupons || 0,
+      icon: Tag,
+      color: "bg-purple-500",
+      textColor: "text-purple-600"
+    },
+    {
+      title: "Active Promotions",
+      value: promoAnalyticsData?.data?.activePromotions || 0,
+      icon: Percent,
+      color: "bg-pink-500",
+      textColor: "text-pink-600"
     }
   ];
 

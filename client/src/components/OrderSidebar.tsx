@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { clearCart, removeItem, updateQuantity, updateItemField, setCart, OrderItem } from "@/store/cartSlice";
+import { clearCart, removeItem, updateQuantity, updateItemField, setCart, applyPromotion, removePromotion, clearPromotions, setAvailablePromotions, addItem } from "@/store/cartSlice";
+import type { OrderItem } from "@/store/cartSlice";
 import type { RootState } from "@/store";
 import Keypad from "./Keypad";
 import {
@@ -30,6 +31,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { useGetPromotionsQuery, useValidateCouponMutation } from "@/services/couponApi";
+import { useGetProductsQuery } from "@/services/productApi";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
 import { DiscountDialog } from "./SetDiscount";
@@ -50,8 +60,9 @@ interface OrderSidebarProps {
 
 export default function OrderSidebar({ disabled }: OrderSidebarProps) {
   const dispatch = useDispatch();
-  const { items, totalPrice } = useSelector((state: RootState) => state.cart);
+  const { items, totalPrice, appliedPromotions, availablePromotions } = useSelector((state: RootState) => state.cart);
   const { sessionId } = useSelector((state: RootState) => state.user);
+  const isProcessingRef = useRef(false);
   const [createOrder, { isLoading }] = useCreateOrderMutation();
   const [updateOrder] = useUpdateOrderMutation();
   const [updateTableStatus] = useUpdateTableStatusMutation();
@@ -62,6 +73,11 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
+  const [couponDialogOpen, setCouponDialogOpen] = useState(false);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [couponError, setCouponError] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "digital" | "upi">("cash");
   const [showQR, setShowQR] = useState(false);
   const [showGateway, setShowGateway] = useState(false);
@@ -174,6 +190,65 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
     }
   }, [settingsData]);
 
+  // Fetch active promotions
+  const { data: promotionsData } = useGetPromotionsQuery();
+  const { data: productsResponse } = useGetProductsQuery({ limit: 100 });
+  const products = productsResponse?.data || [];
+  const [validateCoupon] = useValidateCouponMutation();
+
+  const now = new Date();
+  const activePromotions = (promotionsData?.data || []).filter((p: any) => {
+    const isValid = p.isActive && 
+      new Date(p.validFrom) <= now && 
+      new Date(p.validUntil) >= now;
+    console.log("Promotion check:", p.promotionName, { isActive: p.isActive, validFrom: p.validFrom, validUntil: p.validUntil, isValid });
+    return isValid;
+  });
+
+  // Use applied promotions
+  const totalPromoDiscount = appliedPromotions.reduce((sum: number, promo: any) => sum + (promo.discountAmount || 0), 0);
+  const appliedPromotionNames = appliedPromotions.map((promo: any) => `${promo.name} (-₹${promo.discountAmount?.toFixed(2) || '0.00'})`);
+
+  const totalAutoPromoDiscount = totalPromoDiscount;
+  const autoPromoNames = [...appliedPromotionNames];
+
+  // 3. Calculate Coupon Discount
+  let couponDiscount = 0;
+  let isCouponValidForAmount = false;
+
+  if (appliedCoupon) {
+    if (totalPrice >= appliedCoupon.minimumOrderAmount) {
+      isCouponValidForAmount = true;
+      if (appliedCoupon.discountType === "percentage") {
+        couponDiscount = totalPrice * (appliedCoupon.discountValue / 100);
+      } else if (appliedCoupon.discountType === "fixed") {
+        couponDiscount = appliedCoupon.discountValue;
+      }
+      couponDiscount = Math.min(couponDiscount, totalPrice);
+    }
+  }
+
+  // 4. Apply coupon or promotions
+  let appliedPromoDiscount = 0;
+  let appliedDiscountType: "none" | "coupon" | "promotion" = "none";
+  let displayPromoText = "";
+  let finalCouponCode = "";
+  let finalAppliedPromotions: string[] = [];
+
+  if (couponDiscount > 0 && isCouponValidForAmount) {
+    appliedPromoDiscount = couponDiscount;
+    appliedDiscountType = "coupon";
+    displayPromoText = `${appliedCoupon.couponCode} (-₹${couponDiscount.toFixed(2)})`;
+    finalCouponCode = appliedCoupon.couponCode;
+    finalAppliedPromotions = [];
+  } else if (totalAutoPromoDiscount > 0) {
+    appliedPromoDiscount = totalAutoPromoDiscount;
+    appliedDiscountType = "promotion";
+    displayPromoText = autoPromoNames.join(", ");
+    finalCouponCode = "";
+    finalAppliedPromotions = appliedPromotions.map((promo: any) => promo.name);
+  }
+
   const grossSubtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const itemDiscountsTotal = items.reduce((sum, item) => sum + (item.price * (item.discount || 0) / 100) * item.quantity, 0);
 
@@ -184,19 +259,108 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
     return sum + (discountedPrice * (taxRate / 100)) * item.quantity;
   }, 0);
 
-  const discountAmount = (totalPrice * discountPercent) / 100;
-  const globalDiscountFactor = totalPrice > 0 ? (totalPrice - discountAmount) / totalPrice : 1;
+  const manualDiscountAmount = (totalPrice * discountPercent) / 100;
+  const discountAmount = manualDiscountAmount; // Alias for backward compatibility
+  const totalCombinedDiscount = Math.min(manualDiscountAmount + appliedPromoDiscount, totalPrice);
+  const globalDiscountFactor = totalPrice > 0 ? (totalPrice - totalCombinedDiscount) / totalPrice : 1;
   const finalTaxAmount = itemTaxesTotal * globalDiscountFactor;
 
-  const finalTotal = totalPrice - discountAmount + finalTaxAmount;
+  const finalTotal = totalPrice - totalCombinedDiscount + finalTaxAmount;
+
+  // Automatically apply buy X get Y promotions
+  useEffect(() => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
+    const processPromotions = () => {
+      const nonFreeItems = items.filter(item => !item.isFreeFromPromotion);
+      let freeItemsToKeep: string[] = [];
+      
+      activePromotions.forEach(promo => {
+        if (promo.promotionType === "buyXGetY" && promo.buyXGetY) {
+          const buyProductId = typeof promo.buyXGetY.buyProduct === "object" 
+            ? promo.buyXGetY.buyProduct?._id 
+            : promo.buyXGetY.buyProduct;
+          const freeProductId = typeof promo.buyXGetY.freeProduct === "object" 
+            ? promo.buyXGetY.freeProduct?._id 
+            : promo.buyXGetY.freeProduct;
+          
+          if (!buyProductId) return;
+          
+          const matchingBuyItems = nonFreeItems.filter(item => item.productId === buyProductId);
+          const totalBuyQty = matchingBuyItems.reduce((sum, item) => sum + item.quantity, 0);
+          const buyQty = promo.buyXGetY.buyQuantity || 1;
+          const freeQty = promo.buyXGetY.freeQuantity || 1;
+          const groupSize = buyQty + freeQty;
+          const numGroups = Math.floor(totalBuyQty / groupSize);
+          const neededFreeQty = numGroups * freeQty;
+          
+          if (neededFreeQty > 0) {
+            // Find the free product data
+            const freeProductData = products.find((p: any) => 
+              p._id === freeProductId || (freeProductId === buyProductId && p._id === buyProductId)
+            );
+            
+            if (freeProductData) {
+              // Get existing free items for this promotion
+              const existingFreeItems = items.filter(item => 
+                item.isFreeFromPromotion && 
+                item.productId === (freeProductId || buyProductId)
+              );
+              
+              // Keep track of which free items to keep
+              let keptCount = 0;
+              existingFreeItems.forEach(item => {
+                if (keptCount < neededFreeQty) {
+                  freeItemsToKeep.push(item.lineId);
+                  keptCount += item.quantity;
+                }
+              });
+              
+              // Add missing free items
+              const toAdd = neededFreeQty - keptCount;
+              for (let i = 0; i < toAdd; i++) {
+                dispatch(addItem({
+                  productId: freeProductId || buyProductId,
+                  name: freeProductData.name,
+                  size: "Regular",
+                  price: freeProductData.basePrice || 0,
+                  imageUrl: freeProductData.imageUrl,
+                  isFreeFromPromotion: true
+                }));
+              }
+            }
+          }
+        }
+      });
+      
+      // Remove any free items not in freeItemsToKeep
+      items.forEach(item => {
+        if (item.isFreeFromPromotion && !freeItemsToKeep.includes(item.lineId)) {
+          dispatch(removeItem({ lineId: item.lineId }));
+        }
+      });
+    };
+    
+    processPromotions();
+
+    // Reset processing flag after a short delay
+    setTimeout(() => {
+      isProcessingRef.current = false;
+    }, 100);
+  }, [items, activePromotions, products, dispatch]);
 
   useEffect(() => {
     socket.emit("cashierCartUpdate", {
       cart: items,
       totalPrice: finalTotal,
-      paymentStatus: showSuccessScreen ? "paid" : "unpaid"
+      paymentMethod: paymentMethod,
+      discountPercent: discountPercent,
+      taxRate: settingsTaxRate,
+      paymentStatus: showSuccessScreen ? "paid" : "unpaid",
+      isPaymentStep: selectedPaymentMethod !== null
     });
-  }, [items, finalTotal, showSuccessScreen]);
+  }, [items, finalTotal, paymentMethod, discountPercent, settingsTaxRate, showSuccessScreen, selectedPaymentMethod]);
 
   const confirmCheckout = async (shouldPrint: boolean = true) => {
     let receiptWindow: any = null;
@@ -217,7 +381,11 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
         })),
         totalItems: items.reduce((acc, item) => acc + item.quantity, 0),
         totalPrice: finalTotal,
-        discount: discountAmount + itemDiscountsTotal,
+        discountPercent: discountPercent,
+        discount: manualDiscountAmount + appliedPromoDiscount + itemDiscountsTotal,
+        discountAmount: manualDiscountAmount + appliedPromoDiscount,
+        couponCode: finalCouponCode || undefined,
+        appliedPromotions: finalAppliedPromotions,
         tax: finalTaxAmount,
         paymentMethod,
         table: selectedTable || null,
@@ -372,9 +540,12 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
                   style={{ border: `1px solid ${YELLOW}30` }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-[10px] uppercase truncate" style={{ color: CREAM }}>{item.name}</p>
+                  <div className="flex items-center gap-1">
+                    <p className="font-black text-[10px] uppercase truncate" style={{ color: CREAM }}>{item.name}</p>
+                    {item.isFreeFromPromotion && <span className="text-[7px] font-black uppercase px-1 py-0.5" style={{ background: "#4ade80", color: G_DARK }}>FREE</span>}
+                  </div>
                   <div className="flex flex-col">
-                    <p className="text-[8px] font-mono mt-0.5" style={{ color: `${CREAM}50` }}>{item.size} | ₹{item.price.toFixed(2)}</p>
+                    <p className="text-[8px] font-mono mt-0.5" style={{ color: `${CREAM}50` }}>{item.size} | {item.isFreeFromPromotion ? "FREE" : `₹${item.price.toFixed(2)}`}</p>
                     {item.discount !== undefined && item.discount > 0 && (
                       <p className="text-[8px] font-mono" style={{ color: "#4ade80" }}>Disc: {item.discount}%</p>
                     )}
@@ -413,6 +584,23 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
             <span>Global Discount ({discountPercent}%)</span><span>-₹{discountAmount.toFixed(2)}</span>
           </div>
         )}
+        {appliedPromoDiscount > 0 && (
+          <div className="flex flex-col gap-0.5 border-t border-dashed py-1.5 my-1" style={{ borderColor: `${YELLOW}22` }}>
+            <span className="text-[7px] font-mono tracking-wider uppercase text-yellow-400">Applied Discount Mode: {appliedDiscountType.toUpperCase()}</span>
+            <div className="flex justify-between text-[9px] font-bold text-green-400">
+              <span className="uppercase truncate max-w-[200px]">{displayPromoText}</span>
+              <span>-₹{appliedPromoDiscount.toFixed(2)}</span>
+            </div>
+            {appliedDiscountType === "coupon" && (
+              <button 
+                onClick={() => setAppliedCoupon(null)} 
+                className="text-[7px] text-red-400 hover:text-red-300 uppercase tracking-widest text-left font-mono underline cursor-pointer mt-0.5 bg-transparent border-none p-0"
+              >
+                Remove Coupon
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex justify-between text-[8px]" style={{ color: `${CREAM}50` }}>
           <span>Tax</span><span>+₹{finalTaxAmount.toFixed(2)}</span>
         </div>
@@ -433,10 +621,205 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
         />
       )}
 
-      {/* Bottom Controls */}
+      {/* Promotions Section */}
+      {activePromotions.length > 0 && (
+        <div className="mb-4 p-3 border-2" style={{ borderColor: `${YELLOW}30`, background: G_DARK }}>
+          <h3 className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color: YELLOW }}>AVAILABLE PROMOTIONS</h3>
+          <div className="space-y-2">
+            {activePromotions.map((promo: any) => {
+              const isApplied = appliedPromotions.some((p: any) => p.id === promo._id);
+              // Check if promotion is eligible
+              let isEligible = false;
+              try {
+                switch (promo.promotionType) {
+                  case "productDiscount":
+                    if (promo.productDiscount) {
+                      const targetProductId = typeof promo.productDiscount.product === "object" ? promo.productDiscount.product?._id : promo.productDiscount.product;
+                      isEligible = items.some(item => item.productId === targetProductId);
+                    }
+                    break;
+                  case "categoryDiscount":
+                    if (promo.categoryDiscount) {
+                      const targetCategoryId = typeof promo.categoryDiscount.category === "object" ? promo.categoryDiscount.category?._id : promo.categoryDiscount.category;
+                      isEligible = items.some((item: any) => {
+                        const product = products.find((p: any) => p._id === item.productId);
+                        return product?.category?._id === targetCategoryId || product?.category === targetCategoryId;
+                      });
+                    }
+                    break;
+                  case "buyXGetY":
+                    if (promo.buyXGetY) {
+                      const buyProductId = typeof promo.buyXGetY.buyProduct === "object" ? promo.buyXGetY.buyProduct?._id : promo.buyXGetY.buyProduct;
+                      const matchingItems = items.filter(item => item.productId === buyProductId);
+                      const totalQty = matchingItems.reduce((sum, item) => sum + item.quantity, 0);
+                      const buyQty = promo.buyXGetY.buyQuantity || 1;
+                      isEligible = totalQty >= buyQty;
+                    }
+                    break;
+                  case "bundlePrice":
+                    if (promo.bundlePrice) {
+                      const targetProductId = typeof promo.bundlePrice.product === "object" ? promo.bundlePrice.product?._id : promo.bundlePrice.product;
+                      const matchingItems = items.filter(item => item.productId === targetProductId);
+                      const totalQty = matchingItems.reduce((sum, item) => sum + item.quantity, 0);
+                      const reqQty = promo.bundlePrice.requiredQuantity || 1;
+                      isEligible = totalQty >= reqQty;
+                    }
+                    break;
+                  case "orderValueDiscount":
+                    if (promo.orderValueDiscount) {
+                      isEligible = totalPrice >= (promo.orderValueDiscount.minimumOrderAmount || 0);
+                    }
+                    break;
+                  default:
+                    isEligible = true;
+                }
+              } catch (e) {
+                console.error("Error checking eligibility", e);
+              }
+
+              return (
+                <div key={promo._id} className="p-2 border rounded" style={{ borderColor: isEligible ? YELLOW : `${YELLOW}30`, background: isEligible ? `${YELLOW}10` : 'transparent' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: isEligible ? CREAM : `${CREAM}30` }}>{promo.promotionName}</p>
+                      <p className="text-[7px] font-mono mt-0.5" style={{ color: `${CREAM}40` }}>{promo.description}</p>
+                    </div>
+                    {isEligible && (
+                      <button
+                        onClick={() => {
+                          if (isApplied) {
+                            dispatch(removePromotion({ id: promo._id }));
+                          } else {
+                            // Handle applying promotion
+                            let discount = 0;
+                            try {
+                              switch (promo.promotionType) {
+                                case "productDiscount":
+                                  if (promo.productDiscount) {
+                                    const targetProductId = typeof promo.productDiscount.product === "object" ? promo.productDiscount.product?._id : promo.productDiscount.product;
+                                    if (targetProductId) {
+                                      const matchingItems = items.filter(item => item.productId === targetProductId);
+                                      const subtotal = matchingItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+                                      if (promo.productDiscount.discountType === "percentage") {
+                                        discount = subtotal * (promo.productDiscount.discountValue / 100);
+                                      } else if (promo.productDiscount.discountType === "fixed") {
+                                        discount = Math.min(promo.productDiscount.discountValue, subtotal);
+                                      }
+                                    }
+                                  }
+                                  break;
+                                case "categoryDiscount":
+                                  if (promo.categoryDiscount) {
+                                    const targetCategoryId = typeof promo.categoryDiscount.category === "object" ? promo.categoryDiscount.category?._id : promo.categoryDiscount.category;
+                                    if (targetCategoryId) {
+                                      const matchingItems = items.filter((item: any) => {
+                                        const product = products.find((p: any) => p._id === item.productId);
+                                        return product?.category?._id === targetCategoryId || product?.category === targetCategoryId;
+                                      });
+                                      const subtotal = matchingItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+                                      if (promo.categoryDiscount.discountType === "percentage") {
+                                        discount = subtotal * (promo.categoryDiscount.discountValue / 100);
+                                      } else if (promo.categoryDiscount.discountType === "fixed") {
+                                        discount = Math.min(promo.categoryDiscount.discountValue, subtotal);
+                                      }
+                                    }
+                                  }
+                                  break;
+                                case "buyXGetY":
+                                  if (promo.buyXGetY) {
+                                    const buyProductId = typeof promo.buyXGetY.buyProduct === "object" ? promo.buyXGetY.buyProduct?._id : promo.buyXGetY.buyProduct;
+                                    const freeProductId = typeof promo.buyXGetY.freeProduct === "object" ? promo.buyXGetY.freeProduct?._id : promo.buyXGetY.freeProduct;
+                                    const buyQty = promo.buyXGetY.buyQuantity || 1;
+                                    const freeQty = promo.buyXGetY.freeQuantity || 1;
+                                    if (buyProductId) {
+                                      const matchingItems = items.filter(item => item.productId === buyProductId);
+                                      const totalQty = matchingItems.reduce((sum, item) => sum + item.quantity, 0);
+                                      const groupSize = buyQty + freeQty;
+                                      const numGroups = Math.floor(totalQty / groupSize);
+                                      if (numGroups > 0) {
+                                        // Add free items
+                                        const freeProductData = products.find((p: any) => p._id === freeProductId || p._id === buyProductId);
+                                        if (freeProductData) {
+                                          for (let i = 0; i < numGroups * freeQty; i++) {
+                                            dispatch(addItem({
+                                              productId: freeProductId || buyProductId,
+                                              name: freeProductData.name,
+                                              size: "",
+                                              price: freeProductData.price,
+                                              quantity: 1,
+                                              imageUrl: freeProductData.imageUrl,
+                                              isFreeFromPromotion: true
+                                            }));
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                  break;
+                                case "bundlePrice":
+                                  if (promo.bundlePrice) {
+                                    const targetProductId = typeof promo.bundlePrice.product === "object" ? promo.bundlePrice.product?._id : promo.bundlePrice.product;
+                                    if (targetProductId) {
+                                      const matchingItems = items.filter(item => item.productId === targetProductId);
+                                      const totalQty = matchingItems.reduce((sum, item) => sum + item.quantity, 0);
+                                      const reqQty = promo.bundlePrice.requiredQuantity || 1;
+                                      const itemPrice = matchingItems[0]?.price || 0;
+                                      const originalPrice = totalQty * itemPrice;
+                                      const bundlePricePerBundle = promo.bundlePrice.bundlePrice || 0;
+                                      const numBundles = Math.floor(totalQty / reqQty);
+                                      if (numBundles > 0) {
+                                        const newPrice = (numBundles * bundlePricePerBundle) + ((totalQty % reqQty) * itemPrice);
+                                        if (newPrice < originalPrice) {
+                                          discount = originalPrice - newPrice;
+                                        }
+                                      }
+                                    }
+                                  }
+                                  break;
+                                case "orderValueDiscount":
+                                  if (promo.orderValueDiscount) {
+                                    if (totalPrice >= (promo.orderValueDiscount.minimumOrderAmount || 0)) {
+                                      if (promo.orderValueDiscount.discountType === "percentage") {
+                                        discount = totalPrice * (promo.orderValueDiscount.discountValue / 100);
+                                      } else if (promo.orderValueDiscount.discountType === "fixed") {
+                                        discount = promo.orderValueDiscount.discountValue;
+                                      }
+                                    }
+                                  }
+                                  break;
+                              }
+                            } catch (e) {
+                              console.error("Error calculating discount", e);
+                            }
+                            dispatch(applyPromotion({
+                              id: promo._id,
+                              name: promo.promotionName,
+                              discountAmount: discount,
+                              type: promo.promotionType
+                            }));
+                          }
+                        }}
+                        className="text-[8px] font-black uppercase px-2 py-1 border transition-all"
+                        style={{
+                          borderColor: isApplied ? "#4ade80" : YELLOW,
+                          color: isApplied ? "#4ade80" : YELLOW,
+                          background: "transparent"
+                        }}
+                      >
+                        {isApplied ? "REMOVE" : "APPLY"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+        {/* Bottom Controls */}
       <div className="space-y-3 pt-3 border-t-2" style={{ borderColor: `${YELLOW}28` }}>
-        {/* Table & Discount */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Table & Discount & Coupon */}
+        <div className="grid grid-cols-3 gap-1.5">
           <div className="space-y-1">
             <label className="text-[8px] font-black uppercase tracking-widest" style={{ color: `${CREAM}50` }}>Table</label>
             <select
@@ -473,6 +856,20 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
               style={{ borderColor: `${YELLOW}45`, color: YELLOW, background: "transparent" }}
             >
               <Tag className="w-3 h-3" /> {discountPercent}% OFF
+            </button>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[8px] font-black uppercase tracking-widest" style={{ color: `${CREAM}50` }}>Coupon Code</label>
+            <button
+              onClick={() => setCouponDialogOpen(true)}
+              className="w-full h-9 text-[9px] font-black uppercase border-2 flex items-center justify-center gap-1 transition-all hover:opacity-80"
+              style={{ 
+                borderColor: appliedCoupon ? "#4ade80" : `${YELLOW}45`, 
+                color: appliedCoupon ? "#4ade80" : YELLOW, 
+                background: "transparent" 
+              }}
+            >
+              <Tag className="w-3 h-3" /> {appliedCoupon ? appliedCoupon.couponCode : "COUPON"}
             </button>
           </div>
         </div>
@@ -744,6 +1141,85 @@ export default function OrderSidebar({ disabled }: OrderSidebarProps) {
           </div>
         </div>
       )}
+
+      {/* Coupon Dialog */}
+      <Dialog open={couponDialogOpen} onOpenChange={setCouponDialogOpen}>
+        <DialogContent className="max-w-md border-2 rounded-none p-0" style={{ background: G_DARK, borderColor: YELLOW }}>
+          <DialogHeader className="p-6 border-b-2" style={{ borderColor: `${YELLOW}28` }}>
+            <DialogTitle className="text-lg font-black uppercase tracking-tight flex items-center justify-center gap-2" style={{ color: CREAM }}>
+              <Tag className="w-5 h-5" style={{ color: YELLOW }} /> Apply Coupon Code
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!couponCodeInput.trim()) return;
+            setCouponError("");
+            try {
+              const res = await validateCoupon({
+                couponCode: couponCodeInput.toUpperCase().trim(),
+                orderAmount: totalPrice
+              }).unwrap();
+              
+              if (res.success && res.status === "valid") {
+                setAppliedCoupon(res.data);
+                toast.success("Coupon applied successfully!");
+                setCouponDialogOpen(false);
+                setCouponCodeInput("");
+              } else {
+                setCouponError(res.message || "Invalid coupon code");
+              }
+            } catch (err: any) {
+              setCouponError(err.data?.message || "Failed to validate coupon");
+            }
+          }} className="p-6 space-y-4">
+            <div className="space-y-2">
+              <label className="font-mono uppercase text-[9px] tracking-widest" style={{ color: `${CREAM}60` }}>
+                Enter Coupon Code
+              </label>
+              <input
+                type="text"
+                value={couponCodeInput}
+                onChange={(e) => {
+                  setCouponCodeInput(e.target.value.toUpperCase());
+                  setCouponError("");
+                }}
+                className="w-full h-11 px-3 border-2 font-mono uppercase text-sm focus:outline-none"
+                style={{ borderColor: `${YELLOW}45`, background: G_MID, color: CREAM }}
+                placeholder="FESTIVAL50"
+                required
+              />
+              {couponError && (
+                <p className="text-[10px] font-bold text-red-400 font-mono mt-1">
+                  ⚠️ {couponError}
+                </p>
+              )}
+            </div>
+
+            <DialogFooter className="mt-6 gap-2">
+              <button
+                type="button"
+                className="flex-1 h-11 font-black uppercase text-[9px] border-2 rounded-none tracking-widest"
+                style={{ background: "transparent", borderColor: `${CREAM}30`, color: CREAM }}
+                onClick={() => {
+                  setCouponDialogOpen(false);
+                  setCouponCodeInput("");
+                  setCouponError("");
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-11 font-black uppercase text-[9px] border-2 rounded-none tracking-widest"
+                style={{ background: YELLOW, color: G_DARK, borderColor: YELLOW }}
+              >
+                VALIDATE & APPLY
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { login } from "@/store/userSlice";
 import type { AppDispatch } from "@/store";
 import axios from "axios";
 import { useState } from "react";
-import { GoogleLogin } from "@react-oauth/google";
+// GoogleLogin removed
 
 export default function Login() {
   const dispatch = useDispatch<AppDispatch>();
@@ -45,8 +45,6 @@ export default function Login() {
 
       if (res.data.user.role === "admin") {
         navigate("/dashboard");
-      } else if (res.data.user.role === "customer") {
-        navigate("/customer-display");
       } else {
         navigate("/dashboard/pos");
       }
@@ -57,42 +55,7 @@ export default function Login() {
     }
   };
 
-  const handleGoogleSuccess = async (credentialResponse: any) => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5001";
-      const res = await axios.post(`${apiUrl}/api/users/google-login`, {
-        token: credentialResponse.credential,
-      });
-
-      dispatch(
-        login({
-          id: res.data.user._id,
-          name: res.data.user.name,
-          email: res.data.user.email,
-          role: res.data.user.role,
-          token: res.data.token,
-        })
-      );
-
-      localStorage.setItem("token", res.data.token);
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-
-      if (res.data.user.role === "admin") {
-        navigate("/dashboard");
-      } else if (res.data.user.role === "customer") {
-        navigate("/customer-display"); // General customer route
-      } else {
-        navigate("/dashboard/pos");
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Google Authentication failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Google login handler removed
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -100,30 +63,24 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-warm-white flex flex-col md:flex-row">
-      {/* 🌑 20% Soft Black Side Panel */}
-      <div className="w-full md:w-1/3 bg-deep-black text-warm-white p-12 md:p-20 flex flex-col justify-between border-b-8 md:border-b-0 md:border-r-8 border-golden-yellow">
-        <div>
-          <div className="w-24 h-24 bg-white p-2 mb-12">
+    <div className="min-h-screen bg-warm-white flex flex-col">
+      {/* 🌑 Top Black Panel */}
+      <div className="w-full bg-deep-black text-warm-white p-12 flex flex-col border-b-8 border-golden-yellow">
+        <div className="flex justify-between items-start">
+          <div className="w-24 h-24 bg-white p-2">
             <img src="/app/logo.png" alt="Odoo POS Cafe" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-6xl md:text-8xl leading-[0.85] italic tracking-tighter mb-8">
-            RESTAURANT<br />
-            <span className="text-golden-yellow">TECH</span><br />
-            NIQUE.
-          </h1>
-          <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase max-w-xs">
-            [ACCESS_PROTOCOL_INITIATED]<br />
-            Version: 2.0.4 - Brutalist Edition<br />
-            Encrypted Session Management
-          </p>
         </div>
-
-        <div className="hidden md:block">
-          <div className="-rotate-90 origin-left inline-block">
-            <p className="font-black text-4xl text-golden-yellow opacity-10">ODOO POS CAFE</p>
-          </div>
-        </div>
+        <h1 className="text-5xl md:text-7xl leading-[0.85] italic tracking-tighter mt-6">
+          RESTAURANT<br />
+          <span className="text-golden-yellow">TECH</span><br />
+          NIQUE.
+        </h1>
+        <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase max-w-xs mt-6">
+          [ACCESS_PROTOCOL_INITIATED]<br />
+          Version: 2.0.4 - Brutalist Edition<br />
+          Encrypted Session Management
+        </p>
       </div>
 
       {/* ⚪️ Main Login Area */}
@@ -175,31 +132,15 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="relative flex items-center py-4">
-            <div className="flex-grow border-t-2 border-deep-black/20"></div>
-            <span className="flex-shrink-0 mx-4 font-mono text-xs font-bold text-deep-black/60 uppercase">System Override</span>
-            <div className="flex-grow border-t-2 border-deep-black/20"></div>
-          </div>
-
-          <div className="w-full flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => setError("Google Authentication Failed")}
-              theme="filled_black"
-              shape="rectangular"
-              size="large"
-              text="continue_with"
-              width="100%"
-            />
-          </div>
+          {/* Override removed */}
 
           <div className="flex justify-between items-center pt-8 border-t-2 border-deep-black/10">
-            <a 
-              href="/app/" 
+            <Link 
+              to="/" 
               className="font-black text-sm text-deep-black hover:text-golden-yellow uppercase italic tracking-tighter flex items-center gap-1 group"
             >
               <span className="text-golden-yellow group-hover:pr-2 transition-all">←</span> RETURN_TO_HOME
-            </a>
+            </Link>
             <Link to="/register" className="font-black text-sm text-deep-black hover:text-golden-yellow uppercase italic tracking-tighter flex items-center gap-1 group">
               New Crew Member? <span className="text-golden-yellow group-hover:pl-2 transition-all">→</span>
             </Link>

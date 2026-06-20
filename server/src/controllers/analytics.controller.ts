@@ -2,6 +2,12 @@ import { Request, Response } from "express";
 import { Order } from "../models/Order";
 import { User } from "../models/User";
 import { Session } from "../models/Session";
+import { CouponUsage } from "../models/CouponUsage";
+import { PromotionUsage } from "../models/PromotionUsage";
+import { Coupon } from "../models/Coupon";
+import { Promotion } from "../models/Promotion";
+import { Product } from "../models/Product";
+import { Category } from "../models/Category";
 import mongoose from "mongoose";
 
 /**
@@ -47,16 +53,28 @@ const getDateFilter = (filter: string, startDate?: string, endDate?: string) => 
 };
 
 /**
+ * Helper to build additional filters (employee, session, product)
+ */
+const buildAdditionalFilters = (employeeId?: string, sessionId?: string, productId?: string) => {
+  const filters: any = {};
+  if (employeeId) filters.responsibleStaff = new mongoose.Types.ObjectId(employeeId);
+  if (sessionId) filters.sessionId = new mongoose.Types.ObjectId(sessionId);
+  if (productId) filters["items.product"] = new mongoose.Types.ObjectId(productId);
+  return filters;
+};
+
+/**
  * GET /api/analytics/overview
  * Total Revenue, Total Orders, Average Order Value
  */
 export const getOverviewAnalytics = async (req: Request, res: Response) => {
   try {
-    const { filter, startDate, endDate } = req.query;
+    const { filter, startDate, endDate, employeeId, sessionId, productId } = req.query;
     const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
+    const additionalFilters = buildAdditionalFilters(employeeId as string, sessionId as string, productId as string);
 
     const stats = await Order.aggregate([
-      { $match: { createdAt: dateRange, status: { $ne: "cancelled" } } },
+      { $match: { createdAt: dateRange, status: { $ne: "cancelled" }, ...additionalFilters } },
       {
         $group: {
           _id: null,
@@ -71,6 +89,205 @@ export const getOverviewAnalytics = async (req: Request, res: Response) => {
       success: true,
       data: stats[0] || { totalRevenue: 0, totalOrders: 0, avgOrderValue: 0 }
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/sales-trends
+ * Analyze revenue and order count over time
+ */
+export const getSalesTrendsAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate, endDate, employeeId, sessionId, productId } = req.query;
+    const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
+    const additionalFilters = buildAdditionalFilters(employeeId as string, sessionId as string, productId as string);
+
+    const salesTrends = await Order.aggregate([
+      { $match: { createdAt: dateRange, status: { $ne: "cancelled" }, ...additionalFilters } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          totalRevenue: { $sum: "$totalPrice" },
+          totalOrders: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          date: "$_id",
+          totalRevenue: 1,
+          totalOrders: 1,
+          _id: 0
+        }
+      },
+      { $sort: { date: 1 } }
+    ]);
+
+    res.json({ success: true, data: salesTrends });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/top-categories
+ * Get category-wise sales distribution
+ */
+export const getTopCategoriesAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate, endDate, employeeId, sessionId, productId } = req.query;
+    const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
+    const additionalFilters = buildAdditionalFilters(employeeId as string, sessionId as string, productId as string);
+
+    const topCategories = await Order.aggregate([
+      { $match: { createdAt: dateRange, status: { $ne: "cancelled" }, ...additionalFilters } },
+      { $unwind: "$items" },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product",
+          foreignField: "_id",
+          as: "productInfo"
+        }
+      },
+      { $unwind: "$productInfo" },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "productInfo.category",
+          foreignField: "_id",
+          as: "categoryInfo"
+        }
+      },
+      { $unwind: "$categoryInfo" },
+      {
+        $group: {
+          _id: "$categoryInfo._id",
+          categoryName: { $first: "$categoryInfo.name" },
+          totalRevenue: { $sum: { $multiply: ["$items.quantity", "$items.price"] } }
+        }
+      },
+      { $sort: { totalRevenue: -1 } }
+    ]);
+
+    res.json({ success: true, data: topCategories });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/top-orders
+ * Get top orders by revenue
+ */
+export const getTopOrdersAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate, endDate, employeeId, sessionId, productId } = req.query;
+    const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
+    const additionalFilters = buildAdditionalFilters(employeeId as string, sessionId as string, productId as string);
+
+    const topOrders = await Order.aggregate([
+      { $match: { createdAt: dateRange, status: { $ne: "cancelled" }, ...additionalFilters } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "customerId",
+          foreignField: "_id",
+          as: "customerInfo"
+        }
+      },
+      { $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          orderNumber: "$_id",
+          customerName: "$customerInfo.name",
+          revenue: "$totalPrice"
+        }
+      },
+      { $sort: { revenue: -1 } },
+      { $limit: 10 }
+    ]);
+
+    res.json({ success: true, data: topOrders });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/top-products
+ * Get top products by quantity sold and revenue
+ */
+export const getTopProductsAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate, endDate, employeeId, sessionId, productId } = req.query;
+    const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
+    const additionalFilters = buildAdditionalFilters(employeeId as string, sessionId as string, productId as string);
+
+    const topProducts = await Order.aggregate([
+      { $match: { createdAt: dateRange, status: { $ne: "cancelled" }, ...additionalFilters } },
+      { $unwind: "$items" },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product",
+          foreignField: "_id",
+          as: "productInfo"
+        }
+      },
+      { $unwind: "$productInfo" },
+      {
+        $group: {
+          _id: "$items.product",
+          productName: { $first: "$productInfo.name" },
+          totalQuantity: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: { $multiply: ["$items.quantity", "$items.price"] } }
+        }
+      },
+      { $sort: { totalRevenue: -1 } }
+    ]);
+
+    res.json({ success: true, data: topProducts });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/employees
+ * Get list of employees for filter
+ */
+export const getEmployeesList = async (req: Request, res: Response) => {
+  try {
+    const employees = await User.find({ role: { $in: ["waiter", "cashier", "admin"] } }).select("_id name email role");
+    res.json({ success: true, data: employees });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/sessions
+ * Get list of sessions for filter
+ */
+export const getSessionsList = async (req: Request, res: Response) => {
+  try {
+    const sessions = await Session.find().populate("user", "name").sort({ startTime: -1 });
+    res.json({ success: true, data: sessions });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/products
+ * Get list of products for filter
+ */
+export const getProductsList = async (req: Request, res: Response) => {
+  try {
+    const products = await Product.find().select("_id name");
+    res.json({ success: true, data: products });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -315,6 +532,7 @@ export const getDashboardAnalytics = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 /**
  * GET /api/analytics/cashiers
  * Insights into cashier performance (per session)
@@ -442,39 +660,6 @@ export const getBestItemsAnalytics = async (req: Request, res: Response) => {
 };
 
 /**
- * GET /api/analytics/sales-trends
- * Analyze revenue over time
- */
-export const getSalesTrendsAnalytics = async (req: Request, res: Response) => {
-  try {
-    const { filter, startDate, endDate } = req.query;
-    const dateRange = getDateFilter(filter as string, startDate as string, endDate as string);
-
-    const salesTrends = await Order.aggregate([
-      { $match: { createdAt: dateRange, status: { $ne: "cancelled" } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-          totalRevenue: { $sum: "$totalPrice" }
-        }
-      },
-      {
-        $project: {
-          date: "$_id",
-          totalRevenue: 1,
-          _id: 0
-        }
-      },
-      { $sort: { date: 1 } }
-    ]);
-
-    res.json({ success: true, data: salesTrends });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-/**
  * GET /api/analytics/order-time
  * Analyze order completion time (orderPlaced -> orderReady/completed)
  */
@@ -506,9 +691,9 @@ export const getOrderTimeAnalytics = async (req: Request, res: Response) => {
       }
     ]);
 
-    res.json({ 
-      success: true, 
-      data: orderTimes[0] || { avgPrepTime: 0, fastestOrder: 0, slowestOrder: 0 } 
+    res.json({
+      success: true,
+      data: orderTimes[0] || { avgPrepTime: 0, fastestOrder: 0, slowestOrder: 0 }
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

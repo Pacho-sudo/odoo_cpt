@@ -22,6 +22,10 @@ export const tableApi = createApi({
       query: () => "/api/tables/assigned",
       providesTags: ["Table"],
     }),
+    getTableByToken: builder.query<any, string>({
+      query: (token) => `/api/tables/token/${token}`,
+      providesTags: ["Table"],
+    }),
     createTable: builder.mutation<any, Partial<any>>({
       query: (body) => ({
         url: "/api/tables/",
@@ -67,6 +71,7 @@ export const tableApi = createApi({
 export const {
   useGetTablesQuery,
   useGetAssignedTablesQuery,
+  useGetTableByTokenQuery,
   useCreateTableMutation,
   useUpdateTableStatusMutation,
   useUpdateTableMutation,

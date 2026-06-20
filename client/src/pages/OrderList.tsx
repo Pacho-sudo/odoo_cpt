@@ -17,7 +17,10 @@ import {
   useDeleteOrderMutation,
   useGetOrdersQuery,
   useUpdateOrderMutation,
+  useCancelOrderMutation,
 } from "@/services/orderApi";
+import { useDownloadReceiptMutation, useEmailReceiptMutation } from "@/services/receiptApi";
+import { printReceipt } from "@/utils/printReceipt";
 import { useGetSettingsQuery } from "@/services/SettingsApi";
 import {
   Select,
@@ -33,26 +36,30 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Loader, Search, X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { Loader, Search, X, ChevronLeft, ChevronRight, Trash2, Edit2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import type { Order, OrdersResponse } from "@/types/User";
 import Swal from "sweetalert2";
 import type { RootState } from "@/store";
 import { useSelector } from "react-redux";
+import { useNavigate } from "react-router";
 
 // final price
-const calculateFinalPrice = (order: Order) => {
-  const subtotal = order.totalPrice;
-  const discount = (subtotal * (order.discountPercent ?? 0)) / 100;
-  const tax = ((subtotal - discount) * (order.taxRate ?? 0)) / 100;
+const calculateFinalPrice = (order: any) => {
+  const subtotal = order.totalAmount || order.totalPrice || 0;
+  const discount = order.discountAmount || (order.discountPercent ? (subtotal * order.discountPercent) / 100 : 0);
+  const tax = order.tax || (order.taxRate ? ((subtotal - discount) * order.taxRate) / 100 : 0);
   return subtotal - discount + tax;
 };
 
 const statusConfig = {
-  pending:   { bg: "bg-yellow-500",  text: "PENDING",   dot: "bg-yellow-400" },
+  draft:     { bg: "bg-yellow-500",  text: "DRAFT",     dot: "bg-yellow-400" },
+  pending:   { bg: "bg-blue-500",    text: "PENDING",   dot: "bg-blue-400" },
   preparing: { bg: "bg-orange-500",  text: "PREPARING", dot: "bg-orange-400" },
+  ready:     { bg: "bg-purple-500",  text: "READY",     dot: "bg-purple-400" },
   served:    { bg: "bg-green-600",   text: "SERVED",    dot: "bg-green-400"  },
+  paid:      { bg: "bg-emerald-600", text: "PAID",      dot: "bg-emerald-400" },
   cancelled: { bg: "bg-red-600",     text: "CANCELLED", dot: "bg-red-400"    },
 } as const;
 
@@ -64,10 +71,16 @@ const paymentConfig = {
 
 const OrdersDashboard = () => {
   const { role } = useSelector((state: RootState) => state.user);
+  const navigate = useNavigate();
   const [selectedPayment, setSelectedPayment] = useState<"cash" | "digital" | "upi">("cash");
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
+  const [openEmailDialog, setOpenEmailDialog] = useState(false);
+  const [emailAddress, setEmailAddress] = useState("");
   const { data: settingsData } = useGetSettingsQuery({});
   const [activePaymentOrder, setActivePaymentOrder] = useState<Order | null>(null);
+  const [activeReceiptOrder, setActiveReceiptOrder] = useState<Order | null>(null);
+  const [downloadReceipt] = useDownloadReceiptMutation();
+  const [emailReceipt] = useEmailReceiptMutation();
 
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(20);
@@ -75,7 +88,7 @@ const OrdersDashboard = () => {
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
   const ref: RefObject<HTMLDivElement | null> = useRef(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [status, setStatus] = useState<"pending" | "preparing" | "served" | "cancelled" | "">("");
+  const [status, setStatus] = useState<"draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "paid" | "">("");
   const today = new Date();
   const localToday = today.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
   const [startDate, setStartDate] = useState<string>(localToday);
@@ -86,7 +99,7 @@ const OrdersDashboard = () => {
   const [query, setQuery] = useState<{
     page: number;
     limit: number;
-    status: "pending" | "preparing" | "served" | "cancelled" | "";
+    status: "draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "paid" | "";
     startDate: string;
     endDate: string;
     orderId?: string;
@@ -132,6 +145,7 @@ const OrdersDashboard = () => {
 
   const [deleteOrder] = useDeleteOrderMutation();
   const [updateOrder] = useUpdateOrderMutation();
+  const [cancelOrder] = useCancelOrderMutation();
 
   const orders = response?.data ?? [];
   const totalPages = response?.pagination?.totalPages ?? 1;
@@ -139,7 +153,7 @@ const OrdersDashboard = () => {
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     setUpdatingId(orderId);
     try {
-      await updateOrder({ id: orderId, data: { status: newStatus } }).unwrap();
+      await updateOrder({ id: orderId, body: { status: newStatus } }).unwrap();
       if (activeOrder && activeOrder._id === orderId) {
         setActiveOrder({ ...activeOrder, status: newStatus });
       }
@@ -170,6 +184,87 @@ const OrdersDashboard = () => {
     setQuery((prev) => ({ ...prev, page: p }));
   };
 
+  const handleEditDraftOrder = (order: any) => {
+    // Load order into POS cart
+    Swal.fire({
+      title: "Edit Draft Order",
+      text: "This will load the draft order into the POS terminal. Continue?",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, load order",
+      cancelButtonText: "No, cancel",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        navigate("/dashboard/pos", { state: { draftOrder: order } });
+      }
+    });
+  };
+
+  const handleCancelDraftOrder = async (order: any) => {
+    try {
+      await cancelOrder(order._id).unwrap();
+      Swal.fire("Success", "Order cancelled!", "success");
+      refetch();
+    } catch (err) {
+      Swal.fire("Error", "Failed to cancel order", "error");
+    }
+  };
+
+  const handlePrintReceipt = (order: any) => {
+    const items = order.items.map((item: any) => ({
+      name: item.product?.name || "Item",
+      quantity: item.quantity,
+      price: item.price
+    }));
+    printReceipt(
+      { data: order },
+      items,
+      order.discountPercent || 0,
+      [],
+      order.table?._id || null,
+      order.totalPrice || order.totalAmount || 0,
+      settingsData?.data || {
+        businessName: "Odoo Cafe",
+        address: "",
+        phone: "",
+        website: "",
+        receiptFooter: "",
+        taxRate: order.taxRate || 0
+      }
+    );
+  };
+
+  const handleDownloadReceipt = async (order: any) => {
+    try {
+      const blob = await downloadReceipt(order._id).unwrap();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipt-${order.orderNumber || order._id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      Swal.fire("Error", "Failed to download receipt", "error");
+    }
+  };
+
+  const handleEmailReceipt = (order: any) => {
+    setActiveReceiptOrder(order);
+    setEmailAddress((order.customer as any)?.email || "");
+    setOpenEmailDialog(true);
+  };
+
+  const sendEmailReceipt = async () => {
+    if (!activeReceiptOrder) return;
+    try {
+      await emailReceipt({ orderId: activeReceiptOrder._id, recipientEmail: emailAddress }).unwrap();
+      Swal.fire("Success", "Receipt sent!", "success");
+      setOpenEmailDialog(false);
+    } catch (err: any) {
+      Swal.fire("Error", err.data?.message || "Failed to send receipt", "error");
+    }
+  };
+
   useOutsideClick(ref as React.RefObject<HTMLDivElement>, () => setActiveOrder(null));
 
   if (isLoading) return <LoadingSkeleton />;
@@ -188,11 +283,14 @@ const OrdersDashboard = () => {
     );
   }
 
-  const statusButtons: { label: string; value: "" | "preparing" | "served" | "pending" | "cancelled" }[] = [
+  const statusButtons: { label: string; value: "" | "draft" | "pending" | "preparing" | "ready" | "served" | "cancelled" | "paid" }[] = [
     { label: "ALL_ORDERS", value: "" },
+    { label: "DRAFT",      value: "draft" },
     { label: "PENDING",    value: "pending" },
     { label: "PREPARING",  value: "preparing" },
+    { label: "READY",      value: "ready" },
     { label: "SERVED",     value: "served" },
+    { label: "PAID",       value: "paid" },
     { label: "CANCELLED",  value: "cancelled" },
   ];
 
@@ -374,12 +472,12 @@ const OrdersDashboard = () => {
                   {/* Top Row */}
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-mono text-[8px] uppercase tracking-[0.3em] text-muted-foreground font-black mb-2">Order_ID</p>
+                      <p className="font-mono text-[8px] uppercase tracking-[0.3em] text-muted-foreground font-black mb-2">Order_Number</p>
                       <h4 className="font-sans font-black text-lg text-deep-black tracking-tighter leading-none">
-                        #{(order.customOrderID ?? order._id).substring(0, 10)}
+                        #{order.orderNumber || (order.customOrderID ?? order._id).substring(0, 10)}
                       </h4>
                       <p className="font-mono text-[9px] uppercase tracking-tight text-muted-foreground mt-2">
-                        {order.table?.name || "TAKEAWAY"}
+                        {order.table?.name || order.tableId?.name || "TAKEAWAY"}
                       </p>
                     </div>
                     <div className={cn("px-3 py-1 font-mono text-[9px] font-black uppercase text-white border-b-2 border-black/20", sc.bg)}>
@@ -441,19 +539,55 @@ const OrdersDashboard = () => {
                         ₹{calculateFinalPrice(order).toFixed(0)}
                       </p>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 flex-wrap">
+                      {order.status === "draft" && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleEditDraftOrder(order); }}
+                            className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-yellow-100 hover:bg-golden-yellow transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
+                          >
+                            <Edit2 size={14} className="inline mr-1" /> EDIT
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCancelDraftOrder(order); }}
+                            className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-red-100 hover:bg-red-200 transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
+                          >
+                            <XCircle size={14} className="inline mr-1" /> CANCEL
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePrintReceipt(order); }}
+                        className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-blue-100 hover:bg-blue-200 transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
+                      >
+                        PRINT
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDownloadReceipt(order); }}
+                        className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-green-100 hover:bg-green-200 transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
+                      >
+                        DOWNLOAD
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleEmailReceipt(order); }}
+                        className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-purple-100 hover:bg-purple-200 transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
+                      >
+                        EMAIL
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setActiveOrder(order); }}
                         className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-white hover:bg-golden-yellow transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"
                       >
                         DETAILS
                       </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); paybill(order); }}
-                        className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-deep-black text-warm-white hover:bg-golden-yellow hover:text-deep-black transition-all shadow-[3px_3px_0px_0px_rgba(245,180,0,1)] active:shadow-none active:translate-y-1"
-                      >
-                        PAY_BILL
-                      </button>
+                      {order.status !== "paid" && order.status !== "cancelled" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); paybill(order); }}
+                          className="h-10 px-4 font-mono font-black uppercase text-[9px] border-2 border-deep-black bg-deep-black text-warm-white hover:bg-golden-yellow hover:text-deep-black transition-all shadow-[3px_3px_0px_0px_rgba(245,180,0,1)] active:shadow-none active:translate-y-1"
+                        >
+                          PAY_BILL
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -620,14 +754,49 @@ const OrdersDashboard = () => {
                       <SelectValue placeholder="UPDATE_STATUS" />
                     </SelectTrigger>
                     <SelectContent className="rounded-none border-2 border-deep-black bg-white p-0 shadow-none">
-                      {["pending","preparing","served","cancelled"].map(v => (
+                      {["draft", "pending", "preparing", "ready", "served", "paid", "cancelled"].map(v => (
                         <SelectItem key={v} value={v} className="font-black uppercase text-xs hover:bg-golden-yellow transition-colors">{v.toUpperCase()}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {role === "admin" && (
+                  {/* Receipt Actions */}
+                  <button
+                    className="flex-1 h-14 bg-blue-500 text-deep-black border-2 border-blue-600 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-blue-400 transition-all shadow-[4px_4px_0px_0px_rgba(50,100,200,1)] active:shadow-none active:translate-y-1"
+                    onClick={() => handlePrintReceipt(activeOrder)}
+                  >
+                    PRINT_RECEIPT
+                  </button>
+                  <button
+                    className="flex-1 h-14 bg-green-500 text-deep-black border-2 border-green-600 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-green-400 transition-all shadow-[4px_4px_0px_0px_rgba(50,200,100,1)] active:shadow-none active:translate-y-1"
+                    onClick={() => handleDownloadReceipt(activeOrder)}
+                  >
+                    DOWNLOAD_RECEIPT
+                  </button>
+                  <button
+                    className="flex-1 h-14 bg-purple-500 text-deep-black border-2 border-purple-600 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-purple-400 transition-all shadow-[4px_4px_0px_0px_rgba(150,50,200,1)] active:shadow-none active:translate-y-1"
+                    onClick={() => handleEmailReceipt(activeOrder)}
+                  >
+                    EMAIL_RECEIPT
+                  </button>
+                  {activeOrder.status === "draft" && (
+                    <>
+                      <button
+                        className="flex-1 h-14 bg-yellow-500 text-deep-black border-2 border-yellow-600 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-yellow-400 transition-all shadow-[4px_4px_0px_0px_rgba(200,150,0,1)] active:shadow-none active:translate-y-1"
+                        onClick={() => handleEditDraftOrder(activeOrder)}
+                      >
+                        <Edit2 size={18} /> EDIT_ORDER
+                      </button>
+                      <button
+                        className="flex-1 h-14 bg-red-600 text-white border-2 border-red-800 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-red-700 transition-all shadow-[4px_4px_0px_0px_rgba(150,0,0,1)] active:shadow-none active:translate-y-1"
+                        onClick={() => handleCancelDraftOrder(activeOrder)}
+                      >
+                        <XCircle size={18} /> CANCEL_ORDER
+                      </button>
+                    </>
+                  )}
+                  {role === "admin" && activeOrder.status === "draft" && (
                     <button
-                      className="flex-1 h-14 bg-red-600 text-white border-2 border-red-800 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-red-700 transition-all shadow-[4px_4px_0px_0px_rgba(150,0,0,1)] active:shadow-none active:translate-y-1"
+                      className="flex-1 h-14 bg-red-900 text-white border-2 border-red-950 font-sans font-black uppercase flex items-center justify-center gap-3 hover:bg-red-800 transition-all shadow-[4px_4px_0px_0px_rgba(100,0,0,1)] active:shadow-none active:translate-y-1"
                       onClick={async () => {
                         Swal.showLoading();
                         await deleteOrder(activeOrder._id);
@@ -698,19 +867,59 @@ const OrdersDashboard = () => {
               ABORT
             </AlertDialogCancel>
             <AlertDialogAction
-              className="flex-1 h-14 bg-deep-black text-warm-white border-2 border-deep-black font-sans font-black uppercase text-sm hover:bg-golden-yellow hover:text-deep-black transition-all rounded-none shadow-[4px_4px_0px_0px_#F5B400] active:shadow-none"
+              className="flex-1 h-14 bg-deep-black text-warm-white border-2 border-deep-black font-sans font-black uppercase text-sm hover:bg-golden-yellow hover:text-deep-black transition-all rounded-none shadow-[4px_4px_0px_0px_rgba(245,180,0,1)] active:shadow-none"
               onClick={async () => {
                 if (!activePaymentOrder) return;
                 try {
-                  await updateOrder({ id: activePaymentOrder._id, data: { paymentMethod: selectedPayment } }).unwrap();
+                  await updateOrder({ id: activePaymentOrder._id, body: { paymentMethod: selectedPayment, status: "paid" } }).unwrap();
                   setOpenPaymentDialog(false);
+                  refetch();
                   Swal.fire("✅ TRANSACTION_CONFIRMED", `Payment committed via ${selectedPayment.toUpperCase()}`, "success");
                 } catch {
-                  Swal.fire("❌ TRANSACTION_FAILED", "Unable to update payment method", "error");
+                  Swal.fire("❌ TRANSACTION_FAILED", "Failed to update payment method", "error");
                 }
               }}
             >
               CONFIRM_PAYMENT
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── EMAIL RECEIPT DIALOG ─────────────────────────────── */}
+      <AlertDialog open={openEmailDialog} onOpenChange={setOpenEmailDialog}>
+        <AlertDialogContent className="rounded-none border-4 border-deep-black shadow-[24px_24px_0px_0px_#F5B400] max-w-md bg-warm-white p-0">
+          <div className="bg-deep-black text-warm-white p-8">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-sans font-black text-3xl uppercase tracking-tighter text-warm-white text-left">EMAIL_RECEIPT</AlertDialogTitle>
+              <AlertDialogDescription className="font-mono text-[10px] uppercase tracking-[0.3em] text-golden-yellow text-left">
+                Send receipt to customer email address.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          </div>
+
+          <div className="p-8 space-y-6">
+            <div>
+              <label className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground mb-2 block font-black">Email_Address</label>
+              <input
+                type="email"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                className="w-full h-14 bg-white text-deep-black rounded-none border-2 border-deep-black font-black text-sm px-4 focus:outline-none focus:border-golden-yellow"
+                placeholder="customer@example.com"
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter className="flex gap-4 px-8 pb-8 border-t-2 border-deep-black pt-6">
+            <AlertDialogCancel className="flex-1 h-14 bg-white border-2 border-deep-black font-sans font-black uppercase text-sm hover:bg-warm-white transition-all rounded-none">
+              ABORT
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="flex-1 h-14 bg-deep-black text-warm-white border-2 border-deep-black font-sans font-black uppercase text-sm hover:bg-golden-yellow hover:text-deep-black transition-all rounded-none shadow-[4px_4px_0px_0px_rgba(245,180,0,1)] active:shadow-none"
+              onClick={sendEmailReceipt}
+            >
+              SEND_RECEIPT
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

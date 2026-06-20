@@ -19,10 +19,10 @@ import {
 } from "@/services/SettingsApi";
 import { useGetActiveSessionQuery, useGetSessionsQuery, useOpenSessionMutation } from "@/services/sessionApi";
 import { useNavigate } from "react-router";
-import { PlayCircle, Clock, Wallet, ShoppingCart, Users, ShieldCheck } from "lucide-react";
+import { PlayCircle, Clock, Wallet, ShoppingCart, Users } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { UserApproval } from "@/components/UserApproval";
 import { TableAssignment } from "@/components/TableAssignment";
+import { ApiKeyManagement } from "@/components/ApiKeyManagement";
 
 const weekdays = [
   "Saturday",
@@ -226,15 +226,7 @@ export const SettingManagement = () => {
             />
           </Section>
 
-          {/* RBAC: User Approval */}
-          <Section title="User Authorization (RBAC)">
-            <div className="md:col-span-2 space-y-4">
-              <p className="text-sm font-bold text-gray-500 mb-2 flex items-center gap-2">
-                <ShieldCheck className="text-blue-600 w-4 h-4" /> Pending Registrations
-              </p>
-              <UserApproval />
-            </div>
-          </Section>
+
 
           {/* Table Allocation */}
           <Section title="Staff Table Responsibility">
@@ -372,6 +364,13 @@ export const SettingManagement = () => {
               type="number"
               disabled={!isEditMode}
             />
+          </Section>
+
+          {/* API Key Management */}
+          <Section title="API Key Management">
+            <div className="md:col-span-2">
+              <ApiKeyManagement />
+            </div>
           </Section>
 
           {/* POS Terminal Setup */}

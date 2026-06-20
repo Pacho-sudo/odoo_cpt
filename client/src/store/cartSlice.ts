@@ -12,16 +12,28 @@ export interface OrderItem {
   imageUrl?: string;
   discount?: number;
   taxRate?: number;
+  isFreeFromPromotion?: boolean;
+}
+
+interface AppliedPromotion {
+  id: string;
+  name: string;
+  discountAmount: number;
+  type: string;
 }
 
 interface OrderState {
   items: OrderItem[];
   totalPrice: number;
+  appliedPromotions: AppliedPromotion[];
+  availablePromotions: any[];
 }
 
 const initialState: OrderState = {
   items: [],
   totalPrice: 0,
+  appliedPromotions: [],
+  availablePromotions: [],
 };
 
 const cartSlice = createSlice({
@@ -35,7 +47,10 @@ const cartSlice = createSlice({
 
       // Recalculate total price
       state.totalPrice = state.items.reduce(
-        (sum, item) => sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity,
+        (sum, item) => {
+          if (item.isFreeFromPromotion) return sum;
+          return sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity;
+        },
         0
       );
     },
@@ -47,7 +62,10 @@ const cartSlice = createSlice({
       state.items = state.items.filter((item) => item.lineId !== action.payload.lineId);
 
       state.totalPrice = state.items.reduce(
-        (sum, item) => sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity,
+        (sum, item) => {
+          if (item.isFreeFromPromotion) return sum;
+          return sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity;
+        },
         0
       );
     },
@@ -60,7 +78,10 @@ const cartSlice = createSlice({
     setCart: (state, action: PayloadAction<OrderItem[]>) => {
       state.items = action.payload;
       state.totalPrice = state.items.reduce(
-        (sum, item) => sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity,
+        (sum, item) => {
+          if (item.isFreeFromPromotion) return sum;
+          return sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity;
+        },
         0
       );
     },
@@ -79,7 +100,10 @@ const cartSlice = createSlice({
       }
 
       state.totalPrice = state.items.reduce(
-        (sum, item) => sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity,
+        (sum, item) => {
+          if (item.isFreeFromPromotion) return sum;
+          return sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity;
+        },
         0
       );
     },
@@ -88,8 +112,8 @@ const cartSlice = createSlice({
       state,
       action: PayloadAction<{
         lineId: string;
-        field: "quantity" | "price" | "discount";
-        value: number;
+        field: "quantity" | "price" | "discount" | "isFreeFromPromotion";
+        value: any;
       }>
     ) => {
       const { lineId, field, value } = action.payload;
@@ -99,12 +123,41 @@ const cartSlice = createSlice({
       }
 
       state.totalPrice = state.items.reduce(
-        (sum, item) => sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity,
+        (sum, item) => {
+          if (item.isFreeFromPromotion) return sum;
+          return sum + (item.price * (1 - (item.discount || 0) / 100)) * item.quantity;
+        },
         0
       );
+    },
+    applyPromotion: (state, action: PayloadAction<AppliedPromotion>) => {
+      state.appliedPromotions = [...state.appliedPromotions, action.payload];
+    },
+    removePromotion: (state, action: PayloadAction<{ id: string }>) => {
+      state.appliedPromotions = state.appliedPromotions.filter(p => p.id !== action.payload.id);
+      // Also remove any free items from this promotion
+      state.items = state.items.filter(item => !item.isFreeFromPromotion || !item.productId.includes(action.payload.id));
+    },
+    clearPromotions: (state) => {
+      state.appliedPromotions = [];
+      state.items = state.items.filter(item => !item.isFreeFromPromotion);
+    },
+    setAvailablePromotions: (state, action: PayloadAction<any[]>) => {
+      state.availablePromotions = action.payload;
     },
   },
 });
 
-export const { addItem, removeItem, clearCart, updateQuantity, updateItemField, setCart } = cartSlice.actions;
+export const { 
+  addItem, 
+  removeItem, 
+  clearCart, 
+  updateQuantity, 
+  updateItemField, 
+  setCart, 
+  applyPromotion, 
+  removePromotion, 
+  clearPromotions, 
+  setAvailablePromotions 
+} = cartSlice.actions;
 export default cartSlice.reducer;

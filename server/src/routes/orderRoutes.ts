@@ -9,6 +9,8 @@ import {
   getTodayOrderSummaryController,
   updateItemStatus,
   confirmDraftOrder,
+  cancelOrder,
+  searchOrders
 } from "../controllers/order.Controller";
 import {
   getSalesLast7Days,
@@ -25,6 +27,9 @@ router.post("/", createOrder);
 // @route   GET /api/orders
 router.get("/", authMiddleware, getOrders);
 
+// @route   GET /api/orders/search
+router.get("/search", authMiddleware, searchOrders);
+
 // Summary routes (must be BEFORE /:id to avoid param conflict)
 router.get("/summary/today", authMiddleware, getTodayOrderSummaryController);
 router.get("/summary/report", authMiddleware, getOrderReport);
@@ -38,6 +43,9 @@ router.put("/:id", authMiddleware, updateOrder);
 
 // @route   DELETE /api/orders/:id
 router.delete("/:id", authMiddleware, deleteOrder);
+
+// @route   PUT /api/orders/:id/cancel
+router.put("/:id/cancel", authMiddleware, cancelOrder);
 
 // @route   PATCH /api/orders/:id/items/:itemId/status
 // @desc    Kitchen marks individual item as unavailable / completed etc.
