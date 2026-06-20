@@ -27,7 +27,12 @@ services:
     name: pos-frontend
     env: static
     rootDir: client
-    buildCommand: npm install && npm run build && cp -r public/* dist/ 2>/dev/null || true
+    buildCommand: |
+      npm install && \
+      npm run build && \
+      mkdir -p dist && \
+      cp -r public/* dist/ 2>/dev/null || true && \
+      cp -r dist/app/* dist/app/ 2>/dev/null || true
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE_URL
