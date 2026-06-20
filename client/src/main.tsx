@@ -41,7 +41,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
         <Provider store={store}>
-          <BrowserRouter>
+          <BrowserRouter basename="/app">
             <MainNavbar />
             <Routes>
               <Route path="/" element={<App />} />
