@@ -9,6 +9,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  base: "/app/",
   server: {
     host: true,
     proxy: {
@@ -22,5 +23,9 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  build: {
+    outDir: "dist/app",
+    emptyOutDir: true,
   },
 });
